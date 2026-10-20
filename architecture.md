@@ -15,15 +15,15 @@ graph LR
         %% Rules -.-> Lambda_Calc
     end
 
-    subgraph AppBackend ["Etape 2 : Application Streamlit Simplifiee"]
+    subgraph AppBackend ["Etape 2 : Application Streamlit"]
         direction TB
-        Cognito["AWS Cognito - Auth (optional)"]
-        UI["Streamlit App - Heatmap et Filtres"]
-        AppRunner["ECS Express Mode - Serveur Streamlit"]
+        UI["Navigateur - Heatmap et Filtres"]
+        ECR["Amazon ECR - Image Docker Streamlit"]
+        ECS["Amazon ECS Express Mode - Serveur Streamlit"]
 
-        Cognito --> UI
-        UI <--> AppRunner
-        AppRunner <--> DocDB
+        UI <--> ECS
+        ECR -- "Pull image" --> ECS
+        ECS <--> DocDB
     end
 
     subgraph AIGeneration ["Etape 3 : Analyse IA et Stockage PDF"]
