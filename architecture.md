@@ -1,23 +1,23 @@
+```mermaid
 graph LR
     subgraph DataPipeline ["Etape 1 : Ingestion et Calcul NoSQL"]
         direction TB
-        UNComtrade["UN Comtrade - Donnees Ble HS 1001"]
+        InputData["Input data"]
         S3_Raw["Amazon S3 - Bucket raw-comtrade-data"]
-        Lambda_ETL["AWS Lambda ou Glue - Nettoyage et Jointure"]
         Lambda_Calc["AWS Lambda - Calcul FOB vs CIF"]
-        Rules["Regles Anomalies : FOB plus grand que CIF ou Gap plus grand que 35%"]
+        %% Rules["Regles Anomalies : FOB plus grand que CIF ou Gap plus grand que 35%"]
         DocDB[("Amazon DocumentDB - Collections trades_matrix et reports_metadata")]
 
-        UNComtrade --> S3_Raw
-        S3_Raw --> Lambda_ETL
-        Lambda_ETL --> Lambda_Calc
+        InputData --> S3_Raw
+        S3_Raw -- Trigger --> Lam`da_Calc
+        %% Lambda_ETL --> Lambda_Calc
         Lambda_Calc --> DocDB
-        Rules -.-> Lambda_Calc
+        %% Rules -.-> Lambda_Calc
     end
 
     subgraph AppBackend ["Etape 2 : Application Streamlit Simplifiee"]
         direction TB
-        Cognito["AWS Cognito - Auth"]
+        Cognito["AWS Cognito - Auth (optional)"]
         UI["Streamlit App - Heatmap et Filtres"]
         AppRunner["AWS App Runner - Serveur Streamlit"]
 
@@ -41,8 +41,7 @@ graph LR
 
     subgraph Transversal ["Securite et Monitoring"]
         direction TB
-        IAM["AWS IAM - Roles et Politiques"]
-        CloudWatch["Amazon CloudWatch - Logs et Alertes"]
+        CloudWatch["Amazon CloudWatch - Logs et Alertes (optional)"]
     end
 
     AppRunner -- "(1) Clic anomalie" --> Lambda_AI
@@ -53,6 +52,6 @@ graph LR
     classDef client fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#FFFFFF;
     classDef ai fill:#147EBA,stroke:#232F3E,stroke-width:2px,color:#FFFFFF;
 
-    class S3_Raw,S3_Reports,Lambda_ETL,Lambda_Calc,DocDB,Cognito,CloudWatch,IAM,AppRunner aws;
+    class S3_Raw,S3_Reports,Lambda_Calc,DocDB,Cognito,CloudWatch,AppRunner aws;
     class UI client;
-    class Bedrock,Lambda_AI,Lambda_PDF ai;
+```
