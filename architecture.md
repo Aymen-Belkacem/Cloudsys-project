@@ -19,7 +19,7 @@ graph LR
         direction TB
         Cognito["AWS Cognito - Auth (optional)"]
         UI["Streamlit App - Heatmap et Filtres"]
-        AppRunner["AWS App Runner - Serveur Streamlit"]
+        AppRunner["ECS Express Mode - Serveur Streamlit"]
 
         Cognito --> UI
         UI <--> AppRunner
