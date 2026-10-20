@@ -1,0 +1,12 @@
+# Ne copier dans l'image que ce dont l'app a besoin
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.env
+infra/
+README.md
+docker-compose.yml
+Dockerfile
