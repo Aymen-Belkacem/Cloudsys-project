@@ -1,0 +1,13 @@
+{
+  "anomaly_id": "FRA_EGY_1001_2023-05",
+  "period": "2023-05",
+  "reporter": "FRA",
+  "partner": "EGY",
+  "hs_code": "1001",
+  "product_name": "Wheat",
+  "fob_unit_price": 400.0,
+  "cif_unit_price": 600.0,
+  "gap_pct": 50.0,
+  "anomaly_type": "Gap > 35%",
+  "historical_context": "Moyenne historique du Gap sur cette route : 12%."
+}
