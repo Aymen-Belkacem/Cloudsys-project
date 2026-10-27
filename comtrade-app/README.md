@@ -1,80 +1,82 @@
-# Comtrade Anomalies – Étape 2 : application Streamlit
+# Comtrade Anomalies – Step 2: Streamlit application
 
-Version placeholder : l'app affiche un *status report* (version, environnement,
-tâche ECS, état des composants) sans se connecter à une base de données.
-Objectif : valider la chaîne **Docker → Amazon ECR → Amazon ECS Express Mode**.
+Placeholder version: the app shows a *status report* (version, environment,
+ECS task, component states) without connecting to any database.
+Goal: validate the **Docker → Amazon ECR → Amazon ECS Express Mode** chain.
 
-## Arborescence
+## Layout
 
 ```
 comtrade-app/
 ├── app/
-│   ├── app.py                 # application Streamlit (status report)
+│   ├── app.py                 # Streamlit application (status report)
 │   ├── requirements.txt
-│   └── .streamlit/config.toml # port 8501, écoute sur 0.0.0.0
-├── Dockerfile                 # image poussée sur ECR
+│   └── .streamlit/config.toml # port 8501, listens on 0.0.0.0
+├── Dockerfile                 # image pushed to ECR
 ├── .dockerignore
-├── docker-compose.yml         # développement local uniquement
+├── docker-compose.yml         # local development only
 └── infra/
-    ├── config.env             # noms des ressources, région, CPU/mémoire
-    ├── deploy.sh              # crée / met à jour toutes les ressources AWS
-    └── teardown.sh            # supprime les ressources (arrête la facturation)
+    ├── config.env             # resource names, region, CPU/memory
+    ├── deploy.sh              # creates / updates all AWS resources
+    └── teardown.sh            # deletes the resources (stops billing)
 ```
 
-## 1. Tester en local
+All commands below run from the `comtrade-app/` directory.
+
+## 1. Run locally
 
 ```bash
 docker compose up --build
-# puis ouvrir http://localhost:8501
+# then open http://localhost:8501
 ```
 
-Le code est monté dans le conteneur : une modification de `app/app.py`
-recharge la page sans rebuild.
+The code is mounted into the container: editing `app/app.py` reloads the page
+without a rebuild.
 
-## 2. Déployer sur AWS (depuis WSL)
+## 2. Deploy to AWS (from WSL)
 
 ```bash
-chmod +x infra/*.sh        # une seule fois
+chmod +x infra/*.sh        # once
 ./infra/deploy.sh
 ```
 
-Le script crée, dans l'ordre : le dépôt ECR, l'image (build + push), les rôles
-IAM (exécution + infrastructure), le log group CloudWatch, le cluster ECS et le
-service ECS Express Mode. Il attend que le service soit stable puis affiche l'URL
-publique (`https://<service>.ecs.<region>.on.aws`).
+The script creates, in order: the ECR repository, the image (build + push), the
+IAM roles (execution + infrastructure), the CloudWatch log group, the ECS cluster
+and the ECS Express Mode service. It waits for the service to be stable, then
+prints the public URL (`https://<service>.ecs.<region>.on.aws`).
 
-Relancer `./infra/deploy.sh` après une modification du code : il pousse une
-nouvelle image (tag unique) et met à jour le service sans interruption.
+Re-run `./infra/deploy.sh` after a code change: it pushes a new image (unique
+tag) and updates the service without downtime.
 
-La région vient de `aws configure` (sinon `eu-central-1`). Pour en forcer une :
-`AWS_REGION=eu-west-3 ./infra/deploy.sh`.
+The region comes from `AWS_REGION`, else `aws configure`, else `us-east-1`.
+To force one: `AWS_REGION=eu-west-3 ./infra/deploy.sh`.
 
-## 3. Vérifier
+## 3. Check
 
-- La page affiche « Plateforme : AWS ECS (Fargate) » et le bloc « Tâche ECS ».
-- Le bouton du bloc « Test interactif » incrémente le compteur : les WebSockets
-  passent bien par l'ALB.
-- Logs : `aws logs tail /ecs/comtrade-app --follow`
+- The page shows "Platform: AWS ECS (Fargate)" and the "ECS task" block.
+- The button in the "Interactive test" block increments the counter: WebSockets
+  go through the ALB.
+- Logs: `aws logs tail /ecs/comtrade-app --follow`
 
-## 4. Tout supprimer
+## 4. Delete everything
 
 ```bash
 ./infra/teardown.sh               # service + ALB, cluster, ECR, logs
-./infra/teardown.sh --delete-iam  # idem + rôles IAM
+./infra/teardown.sh --delete-iam  # same + IAM roles
 ```
 
-> ⚠️ Tant que le service existe, l'ALB et la tâche Fargate sont facturés,
-> même sans trafic. Lancez `teardown.sh` à la fin de chaque session de travail.
+> ⚠️ As long as the service exists, the ALB and the Fargate task are billed,
+> even with no traffic. Run `teardown.sh` at the end of every work session.
 
-## Pré-requis
+## Prerequisites
 
-- AWS CLI v2 récente (doit connaître `aws ecs create-express-gateway-service`)
-- Docker Desktop avec l'intégration WSL activée
-- Un VPC par défaut dans la région (sinon renseigner `SUBNETS` dans `config.env`)
+- Recent AWS CLI v2 (must know `aws ecs create-express-gateway-service`)
+- Docker Desktop with WSL integration enabled
+- A default VPC in the region (otherwise set `SUBNETS` in `config.env`)
 
-## Étapes suivantes
+## Next steps
 
-- Connexion DocumentDB : renseigner `SUBNETS` / `SECURITY_GROUPS` (VPC du cluster),
-  passer l'URI en secret (Secrets Manager), ajouter le certificat CA au Dockerfile.
-- Appel à la Lambda IA (étape 3) : ajouter un rôle de tâche (`--task-role-arn`)
-  avec `lambda:InvokeFunction`.
+- DocumentDB connection: set `SUBNETS` / `SECURITY_GROUPS` (cluster VPC),
+  pass the URI as a secret (Secrets Manager), add the CA certificate to the Dockerfile.
+- Call to the AI Lambda (step 3): add a task role (`--task-role-arn`)
+  with `lambda:InvokeFunction`.

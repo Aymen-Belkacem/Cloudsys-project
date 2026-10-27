@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Deploie l'application Streamlit sur AWS :
-#   1. depot Amazon ECR
-#   2. build + push de l'image Docker
-#   3. roles IAM (execution + infrastructure) requis par ECS Express Mode
-#   4. log group CloudWatch
-#   5. cluster ECS
-#   6. service ECS Express Mode (cree au 1er lancement, mis a jour ensuite)
-#   7. attente de stabilisation + affichage de l'URL publique
+# Deploys the Streamlit application to AWS:
+#   1. Amazon ECR repository
+#   2. Docker image build + push
+#   3. IAM roles (execution + infrastructure) required by ECS Express Mode
+#   4. CloudWatch log group
+#   5. ECS cluster
+#   6. ECS Express Mode service (created on first run, updated afterwards)
+#   7. wait for stability + print the public URL
 #
-# Le script est relancable : chaque etape verifie si la ressource existe deja.
-# Usage (depuis WSL, a la racine du projet ou ailleurs) : ./infra/deploy.sh
+# The script can be re-run: each step checks whether the resource already exists.
+# Usage (from WSL, at the project root or elsewhere): ./infra/deploy.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,31 +17,31 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=infra/config.env
 source "$SCRIPT_DIR/config.env"
 
-export AWS_PAGER=""          # pas de pager "less" sur les sorties AWS CLI
+export AWS_PAGER=""          # no "less" pager on AWS CLI output
 export AWS_REGION
 
 log()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
-die()  { printf '\033[1;31mErreur : %s\033[0m\n' "$*" >&2; exit 1; }
+die()  { printf '\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
 
 # --------------------------------------------------------------------------- #
-# 0. Pre-requis
+# 0. Prerequisites
 # --------------------------------------------------------------------------- #
-log "Verification des pre-requis"
-command -v aws    >/dev/null || die "AWS CLI introuvable"
-command -v docker >/dev/null || die "Docker introuvable"
-docker info >/dev/null 2>&1  || die "Docker ne repond pas (Docker Desktop est-il lance, integration WSL activee ?)"
+log "Checking prerequisites"
+command -v aws    >/dev/null || die "AWS CLI not found"
+command -v docker >/dev/null || die "Docker not found"
+docker info >/dev/null 2>&1  || die "Docker is not responding (is Docker Desktop running, with WSL integration enabled?)"
 aws ecs create-express-gateway-service --generate-cli-skeleton >/dev/null 2>&1 \
-  || die "Votre AWS CLI ne connait pas ECS Express Mode : mettez-la a jour (AWS CLI v2 recente)"
+  || die "Your AWS CLI does not know ECS Express Mode: update it (recent AWS CLI v2)"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)" \
-  || die "Identifiants AWS invalides (aws configure ?)"
+  || die "Invalid AWS credentials (aws configure?)"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 REPO_URI="${REGISTRY}/${ECR_REPO}"
-info "Compte : $ACCOUNT_ID | Region : $AWS_REGION"
+info "Account: $ACCOUNT_ID | Region: $AWS_REGION"
 
-# Tag d'image : hash git court si dispo, sinon horodatage.
-# Un tag unique par deploiement force ECS a lancer une nouvelle revision.
+# Image tag: short git hash if available, else a timestamp.
+# A unique tag per deployment forces ECS to roll out a new revision.
 if git -C "$PROJECT_ROOT" rev-parse --short HEAD >/dev/null 2>&1; then
   IMAGE_TAG="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD)-$(date +%H%M%S)"
 else
@@ -50,11 +50,11 @@ fi
 IMAGE_URI="${REPO_URI}:${IMAGE_TAG}"
 
 # --------------------------------------------------------------------------- #
-# 1. Depot ECR
+# 1. ECR repository
 # --------------------------------------------------------------------------- #
-log "Depot ECR : $ECR_REPO"
+log "ECR repository: $ECR_REPO"
 if aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1; then
-  info "Existe deja"
+  info "Already exists"
 else
   aws ecr create-repository \
     --repository-name "$ECR_REPO" \
@@ -63,32 +63,32 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
-# 2. Build + push de l'image
+# 2. Image build + push
 # --------------------------------------------------------------------------- #
-log "Connexion Docker a ECR"
+log "Docker login to ECR"
 aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
 
-log "Build de l'image : $IMAGE_URI"
-# linux/amd64 = architecture X86_64 utilisee par le service Fargate
+log "Building image: $IMAGE_URI"
+# linux/amd64 = X86_64 architecture used by the Fargate service
 docker build \
   --platform linux/amd64 \
   --build-arg APP_VERSION="$IMAGE_TAG" \
   -t "$IMAGE_URI" \
   "$PROJECT_ROOT"
 
-log "Push de l'image vers ECR"
+log "Pushing image to ECR"
 docker push "$IMAGE_URI"
 
 # --------------------------------------------------------------------------- #
-# 3. Roles IAM
+# 3. IAM roles
 # --------------------------------------------------------------------------- #
 ROLES_CREATED=false
 
-# ensure_role <nom> <service principal> <ARN policy managee>
+# ensure_role <name> <service principal> <managed policy ARN>
 ensure_role() {
   local name="$1" principal="$2" policy_arn="$3"
   if aws iam get-role --role-name "$name" >/dev/null 2>&1; then
-    info "Role $name : existe deja"
+    info "Role $name: already exists"
   else
     aws iam create-role \
       --role-name "$name" \
@@ -100,18 +100,18 @@ ensure_role() {
           \"Action\": \"sts:AssumeRole\"
         }]
       }" >/dev/null
-    info "Role $name : cree"
+    info "Role $name: created"
     ROLES_CREATED=true
   fi
-  # attach-role-policy est idempotent
+  # attach-role-policy is idempotent
   aws iam attach-role-policy --role-name "$name" --policy-arn "$policy_arn"
 }
 
-log "Roles IAM"
-# Role d'execution : utilise par l'agent ECS pour tirer l'image ECR et ecrire les logs
+log "IAM roles"
+# Execution role: used by the ECS agent to pull the ECR image and write logs
 ensure_role "$EXEC_ROLE_NAME" "ecs-tasks.amazonaws.com" \
   "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-# Role d'infrastructure : utilise par ECS pour creer ALB, target group, SG, autoscaling
+# Infrastructure role: used by ECS to create the ALB, target group, SG, autoscaling
 ensure_role "$INFRA_ROLE_NAME" "ecs.amazonaws.com" \
   "arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices"
 
@@ -119,33 +119,33 @@ EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${EXEC_ROLE_NAME}"
 INFRA_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${INFRA_ROLE_NAME}"
 
 if [[ "$ROLES_CREATED" == true ]]; then
-  info "Attente de la propagation IAM (15 s)..."
+  info "Waiting for IAM propagation (15 s)..."
   sleep 15
 fi
 
 # --------------------------------------------------------------------------- #
-# 4. Log group CloudWatch
+# 4. CloudWatch log group
 # --------------------------------------------------------------------------- #
-log "Log group CloudWatch : $LOG_GROUP"
+log "CloudWatch log group: $LOG_GROUP"
 existing_lg="$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
   --query "logGroups[?logGroupName=='${LOG_GROUP}'].logGroupName | [0]" --output text)"
 if [[ "$existing_lg" == "$LOG_GROUP" ]]; then
-  info "Existe deja"
+  info "Already exists"
 else
   aws logs create-log-group --log-group-name "$LOG_GROUP"
-  info "Cree"
+  info "Created"
 fi
 aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days "$LOG_RETENTION_DAYS"
 
 # --------------------------------------------------------------------------- #
-# 5. Cluster ECS
+# 5. ECS cluster
 # --------------------------------------------------------------------------- #
-log "Cluster ECS : $CLUSTER_NAME"
-# create-cluster renvoie le cluster existant s'il est deja ACTIVE
+log "ECS cluster: $CLUSTER_NAME"
+# create-cluster returns the existing cluster if it is already ACTIVE
 aws ecs create-cluster --cluster-name "$CLUSTER_NAME" --query cluster.status --output text
 
 # --------------------------------------------------------------------------- #
-# 6. Service ECS Express Mode
+# 6. ECS Express Mode service
 # --------------------------------------------------------------------------- #
 PRIMARY_CONTAINER=$(cat <<JSON
 {
@@ -170,7 +170,7 @@ service_status="$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services
   --query 'services[0].status' --output text 2>/dev/null || true)"
 
 if [[ "$service_status" == "ACTIVE" ]]; then
-  log "Mise a jour du service Express : $SERVICE_NAME"
+  log "Updating Express service: $SERVICE_NAME"
   SERVICE_ARN="$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" \
     --query 'services[0].serviceArn' --output text)"
   aws ecs update-express-gateway-service \
@@ -183,7 +183,7 @@ if [[ "$service_status" == "ACTIVE" ]]; then
     "${NETWORK_ARGS[@]}" \
     --query 'service.status.statusCode' --output text
 else
-  log "Creation du service Express : $SERVICE_NAME"
+  log "Creating Express service: $SERVICE_NAME"
   SERVICE_ARN="$(aws ecs create-express-gateway-service \
     --service-name "$SERVICE_NAME" \
     --cluster "$CLUSTER_NAME" \
@@ -199,14 +199,14 @@ else
     --tags key=project,value="$PROJECT_NAME" \
     --query 'service.serviceArn' --output text)"
 fi
-info "Service : $SERVICE_ARN"
+info "Service: $SERVICE_ARN"
 
 # --------------------------------------------------------------------------- #
-# 7. Attente + URL
+# 7. Wait + URL
 # --------------------------------------------------------------------------- #
-log "Attente de la stabilisation du service (jusqu'a ~10 min la premiere fois)..."
+log "Waiting for the service to stabilize (up to ~10 min the first time)..."
 if ! aws ecs wait services-stable --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME"; then
-  info "Le service n'est pas encore stable. Diagnostic :"
+  info "The service is not stable yet. Diagnostics:"
   info "  aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].events[:5]'"
   info "  aws logs tail $LOG_GROUP --since 15m"
   exit 1
@@ -216,15 +216,15 @@ ENDPOINT="$(aws ecs describe-express-gateway-service --service-arn "$SERVICE_ARN
   --query "service.activeConfigurations[0].ingressPaths[?accessType=='PUBLIC'].endpoint | [0]" \
   --output text 2>/dev/null || true)"
 
-log "Deploiement termine"
+log "Deployment complete"
 info "Image   : $IMAGE_URI"
 if [[ -n "$ENDPOINT" && "$ENDPOINT" != "None" ]]; then
   [[ "$ENDPOINT" == http* ]] || ENDPOINT="https://${ENDPOINT}"
   info "URL     : $ENDPOINT"
-  info "(le DNS peut mettre quelques minutes a repondre lors de la premiere creation)"
+  info "(DNS may take a few minutes to resolve after the first creation)"
 else
-  info "URL     : non lue automatiquement, voir :"
+  info "URL     : not read automatically, see:"
   info "  aws ecs describe-express-gateway-service --service-arn $SERVICE_ARN"
 fi
 info "Logs    : aws logs tail $LOG_GROUP --follow"
-info "Detruire: ./infra/teardown.sh"
+info "Destroy : ./infra/teardown.sh"

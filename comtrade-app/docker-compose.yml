@@ -1,5 +1,5 @@
-# Developpement local uniquement : ECS n'utilise pas ce fichier.
-# Usage : docker compose up --build   puis   http://localhost:8501
+# Local development only: ECS does not use this file.
+# Usage: docker compose up --build   then   http://localhost:8501
 services:
   app:
     build:
@@ -11,8 +11,8 @@ services:
       - "8501:8501"
     environment:
       APP_ENV: local
-      # DOCDB_URI: "mongodb://..."   # plus tard, quand l'etape 1 existera
-    # Monte le code pour voir les modifications sans rebuild (Streamlit recharge a chaud)
+      # DOCDB_URI: "mongodb://..."   # later, once step 1 exists
+    # Mount the code to see changes without rebuilding (Streamlit hot reload)
     volumes:
       - ./app:/app
     command: ["streamlit", "run", "app.py", "--server.runOnSave=true"]

@@ -1,8 +1,8 @@
-"""Comtrade Anomalies - Etape 2 : application Streamlit (placeholder).
+"""Comtrade Anomalies - Step 2: Streamlit application (placeholder).
 
-Cette version n'ouvre aucune connexion a une base de donnees.
-Elle affiche un "status report" qui permet de verifier que la chaine
-Docker -> ECR -> ECS Express Mode fonctionne de bout en bout.
+This version does not open any database connection.
+It shows a "status report" used to check that the
+Docker -> ECR -> ECS Express Mode chain works end to end.
 """
 
 import json
@@ -22,15 +22,15 @@ APP_ENV = os.getenv("APP_ENV", "local")
 
 @st.cache_resource
 def _started_at() -> datetime:
-    """Heure de demarrage du process (mise en cache pour toute la duree de vie)."""
+    """Process start time (cached for the whole process lifetime)."""
     return datetime.now(timezone.utc)
 
 
 def _ecs_task_metadata() -> dict | None:
-    """Lit les metadonnees de la tache ECS si l'app tourne sur ECS/Fargate.
+    """Read the ECS task metadata when the app runs on ECS/Fargate.
 
-    ECS injecte la variable ECS_CONTAINER_METADATA_URI_V4 dans chaque conteneur.
-    En local, elle est absente et la fonction renvoie None.
+    ECS injects the ECS_CONTAINER_METADATA_URI_V4 variable into every container.
+    Locally it is missing and the function returns None.
     """
     base_uri = os.getenv("ECS_CONTAINER_METADATA_URI_V4")
     if not base_uri:
@@ -45,8 +45,8 @@ def _ecs_task_metadata() -> dict | None:
             "Launch type": data.get("LaunchType", "?"),
             "Task definition": f'{data.get("Family", "?")}:{data.get("Revision", "?")}',
         }
-    except Exception as exc:  # noqa: BLE001 - le status report ne doit jamais planter
-        return {"Erreur lecture metadonnees": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - the status report must never crash
+        return {"Metadata read error": str(exc)}
 
 
 def _format_uptime(started: datetime) -> str:
@@ -62,29 +62,29 @@ def _format_uptime(started: datetime) -> str:
 st.set_page_config(page_title=APP_NAME, page_icon=":bar_chart:", layout="wide")
 
 st.title(f"{APP_NAME} - Status report")
-st.caption("Etape 2 : application Streamlit. Version placeholder, sans base de donnees.")
+st.caption("Step 2: Streamlit application. Placeholder version, no database.")
 
 ecs_meta = _ecs_task_metadata()
-runtime = "AWS ECS (Fargate)" if ecs_meta else "Local (Docker / poste de dev)"
+runtime = "AWS ECS (Fargate)" if ecs_meta else "Local (Docker / dev machine)"
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Statut", "OK")
+col1.metric("Status", "OK")
 col2.metric("Version", APP_VERSION)
-col3.metric("Environnement", APP_ENV)
+col3.metric("Environment", APP_ENV)
 col4.metric("Uptime", _format_uptime(_started_at()))
 
-st.subheader("Execution")
+st.subheader("Runtime")
 st.table(
     {
-        "Parametre": [
-            "Plateforme",
-            "Hostname du conteneur",
-            "Heure serveur (UTC)",
+        "Parameter": [
+            "Platform",
+            "Container hostname",
+            "Server time (UTC)",
             "Python",
             "Streamlit",
             "OS / architecture",
         ],
-        "Valeur": [
+        "Value": [
             runtime,
             socket.gethostname(),
             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
@@ -96,34 +96,34 @@ st.table(
 )
 
 if ecs_meta:
-    st.subheader("Tache ECS")
-    st.table({"Parametre": list(ecs_meta.keys()), "Valeur": list(ecs_meta.values())})
+    st.subheader("ECS task")
+    st.table({"Parameter": list(ecs_meta.keys()), "Value": list(ecs_meta.values())})
 
-st.subheader("Composants de l'architecture")
+st.subheader("Architecture components")
 st.table(
     {
-        "Composant": [
+        "Component": [
             "Amazon DocumentDB (trades_matrix, reports_metadata)",
-            "AWS Lambda - IA Orchestrator (etape 3)",
-            "Amazon S3 - reports-pdf (etape 3)",
-            "AWS Cognito (optionnel)",
+            "AWS Lambda - AI Orchestrator (step 3)",
+            "Amazon S3 - reports-pdf (step 3)",
+            "AWS Cognito (optional)",
         ],
-        "Etat": [
-            "Non connecte (DOCDB_URI defini)" if os.getenv("DOCDB_URI") else "Non connecte (placeholder)",
-            "Non branche (placeholder)",
-            "Non branche (placeholder)",
-            "Non active",
+        "State": [
+            "Not connected (DOCDB_URI set)" if os.getenv("DOCDB_URI") else "Not connected (placeholder)",
+            "Not wired (placeholder)",
+            "Not wired (placeholder)",
+            "Not enabled",
         ],
     }
 )
 
-with st.expander("Test interactif (verifie que les WebSockets fonctionnent)"):
+with st.expander("Interactive test (checks that WebSockets work)"):
     st.write(
-        "Si ce compteur s'incremente quand vous cliquez, la connexion WebSocket "
-        "entre le navigateur et le serveur Streamlit fonctionne."
+        "If this counter goes up when you click, the WebSocket connection "
+        "between the browser and the Streamlit server works."
     )
     if "clicks" not in st.session_state:
         st.session_state.clicks = 0
-    if st.button("Cliquer"):
+    if st.button("Click"):
         st.session_state.clicks += 1
-    st.write(f"Nombre de clics : **{st.session_state.clicks}**")
+    st.write(f"Click count: **{st.session_state.clicks}**")
