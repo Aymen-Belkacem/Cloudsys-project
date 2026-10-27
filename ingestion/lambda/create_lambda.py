@@ -44,6 +44,11 @@ def create_lambda():
                 "S3_BUCKET_NAME": BUCKET_NAME
             }
         },
+        # Security group for the lambda function
+        VpcConfig={
+            "SubnetIds": [subnet.strip() for subnet in os.environ["LAMBDA_SUBNET_IDS"].split(",")],
+            "SecurityGroupIds": [os.environ["LAMBDA_SECURITY_GROUP_ID"]],
+        },
         Timeout=30,
         MemorySize=256,
         Description="Read files from an S3 bucket and process them",

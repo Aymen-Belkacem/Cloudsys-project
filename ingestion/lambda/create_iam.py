@@ -56,6 +56,9 @@ def create_iam_role():
     # Grant permissions to CloudWatch logs
     iam.attach_role_policy(RoleName=ROLE_NAME, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")
 
+    # Grant permissions to create VPC
+    iam.attach_role_policy(RoleName=ROLE_NAME, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole")
+
     return role_arn
 
 
