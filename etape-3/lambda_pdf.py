@@ -1,72 +1,69 @@
 import boto3
 import os
 import json
-import tempfile
 from datetime import datetime, timezone
 import markdown2
-from weasyprint import HTML, CSS
-
-CSS_STYLES = CSS(string="""
-    @page { size: A4; margin: 2cm; }
-    body { font-family: "DejaVu Sans", sans-serif; font-size: 10pt; line-height: 1.45; color: #1a1a2e; }
-    h1 { font-size: 18pt; color: #1a1a2e; border-bottom: 2px solid #FF9900; padding-bottom: 4px; margin-top: 0; }
-    h2 { font-size: 14pt; color: #1a1a2e; margin-top: 18px; margin-bottom: 8px; border-left: 3px solid #FF9900; padding-left: 8px; }
-    h3 { font-size: 11pt; color: #333; margin-top: 12px; margin-bottom: 6px; }
-    h4 { font-size: 10pt; color: #444; margin-top: 10px; margin-bottom: 4px; }
-    p { margin: 6px 0; }
-    strong { font-weight: bold; color: #1a1a2e; }
-    em { font-style: italic; }
-    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9pt; page-break-inside: avoid; }
-    th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; vertical-align: top; }
-    th { background: #f5f5f5; font-weight: bold; color: #1a1a2e; }
-    tr:nth-child(even) td { background: #fafafa; }
-    code { background: #f0f0f0; padding: 1px 4px; font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; border-radius: 3px; }
-    pre { background: #f8f8f8; padding: 10px; overflow: auto; border: 1px solid #eee; border-radius: 4px; font-size: 8.5pt; }
-    pre code { background: none; padding: 0; }
-    blockquote { border-left: 3px solid #FF9900; padding-left: 12px; margin: 10px 0; color: #555; font-style: italic; }
-    hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
-    ul, ol { margin: 6px 0 6px 20px; }
-    li { margin: 3px 0; }
-    .header-info { background: #f8f9fa; border: 1px solid #eee; border-radius: 4px; padding: 10px; margin-bottom: 16px; font-size: 9.5pt; }
-    .header-info strong { display: inline-block; width: 140px; color: #333; }
-""")
+from xhtml2pdf import pisa
 
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @font-face {{
+            font-family: "DejaVu Sans";
+            src: url("file://{font_dir}/DejaVuSans.ttf");
+        }}
+        @font-face {{
+            font-family: "DejaVu Sans";
+            src: url("file://{font_dir}/DejaVuSans-Bold.ttf");
+            font-weight: bold;
+        }}
+        @font-face {{
+            font-family: "DejaVu Sans Mono";
+            src: url("file://{font_dir}/DejaVuSansMono.ttf");
+        }}
+        @page {{ size: A4; margin: 2cm; }}
+        body {{ font-family: "DejaVu Sans", sans-serif; font-size: 10pt; line-height: 1.45; color: #1a1a2e; }}
+        h1 {{ font-size: 18pt; color: #1a1a2e; border-bottom: 2px solid #FF9900; padding-bottom: 4px; margin-top: 0; }}
+        h2 {{ font-size: 14pt; color: #1a1a2e; margin-top: 18px; margin-bottom: 8px; border-left: 3px solid #FF9900; padding-left: 8px; }}
+        h3 {{ font-size: 11pt; color: #333; margin-top: 12px; margin-bottom: 6px; }}
+        p {{ margin: 6px 0; }}
+        strong {{ font-weight: bold; color: #1a1a2e; }}
+        em {{ font-style: italic; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9pt; page-break-inside: avoid; }}
+        th, td {{ border: 1px solid #ddd; padding: 5px 7px; text-align: left; vertical-align: top; }}
+        th {{ background: #f5f5f5; font-weight: bold; color: #1a1a2e; }}
+        tr:nth-child(even) td {{ background: #fafafa; }}
+        code {{ background: #f0f0f0; padding: 1px 4px; font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; border-radius: 3px; }}
+        pre {{ background: #f8f8f8; padding: 10px; overflow: auto; border: 1px solid #eee; border-radius: 4px; font-size: 8.5pt; }}
+        pre code {{ background: none; padding: 0; }}
+        hr {{ border: none; border-top: 1px solid #eee; margin: 16px 0; }}
+        ul, ol {{ margin: 6px 0 6px 20px; }}
+        li {{ margin: 3px 0; }}
+    </style>
+</head>
+<body>
+    {content}
+</body>
+</html>
+"""
 
 def markdown_to_pdf(markdown_text, output_path):
     html_body = markdown2.markdown(
         markdown_text,
         extras=["tables", "fenced-code-blocks", "header-ids", "footnotes", "strike", "task_list"]
     )
+    html_full = HTML_TEMPLATE.format(font_dir=FONT_DIR, content=html_body)
     
-    html_full = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            @font-face {{
-                font-family: "DejaVu Sans";
-                src: url("file://{FONT_DIR}/DejaVuSans.ttf");
-            }}
-            @font-face {{
-                font-family: "DejaVu Sans";
-                src: url("file://{FONT_DIR}/DejaVuSans-Bold.ttf");
-                font-weight: bold;
-            }}
-            @font-face {{
-                font-family: "DejaVu Sans Mono";
-                src: url("file://{FONT_DIR}/DejaVuSansMono.ttf");
-            }}
-        </style>
-    </head>
-    <body>
-        {html_body}
-    </body>
-    </html>
-    """
+    with open(output_path, "wb") as f:
+        pisa_status = pisa.CreatePDF(html_full, dest=f, encoding="utf-8")
     
-    HTML(string=html_full, base_url=FONT_DIR).write_pdf(output_path, stylesheets=[CSS_STYLES])
+    if pisa_status.err:
+        raise RuntimeError(f"Erreur generation PDF: {pisa_status.err}")
 
 def lambda_handler(event, context):
     region = os.environ.get("AWS_REGION", "us-east-1")
