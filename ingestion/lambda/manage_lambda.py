@@ -12,6 +12,7 @@ load_dotenv()
 
 REGION = os.environ["AWS_REGION"]
 LAMBDA_NAME = os.environ["LAMBDA_NAME"]
+BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 
 lambda_client = boto3.client("lambda", region_name=REGION)
 
@@ -39,6 +40,12 @@ def update_lambda():
 
 
 def delete_lambda():
+    s3 = boto3.client("s3", region_name=REGION)
+    # Remove all S3 event notifications
+    s3.put_bucket_notification_configuration(
+        Bucket=BUCKET_NAME,
+        NotificationConfiguration={}
+    )
     lambda_client.delete_function(FunctionName=LAMBDA_NAME)
     print(f"Lambda deleted: {LAMBDA_NAME}")
 
