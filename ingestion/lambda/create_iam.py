@@ -53,8 +53,8 @@ def create_iam_role():
     # Grant permissions to read S3 objects
     iam.put_role_policy(RoleName=ROLE_NAME, PolicyName="S3ReadOnly", PolicyDocument=json.dumps(s3_policy))
 
-    # Grant permissions to write CloudWatch logs
-    # iam.attach_role_policy(RoleName=ROLE_NAME, PolicyArn=("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"))
+    # Grant permissions to CloudWatch logs
+    iam.attach_role_policy(RoleName=ROLE_NAME, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")
 
     return role_arn
 
