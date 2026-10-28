@@ -1,0 +1,27 @@
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install system dependencies for weasyprint
+RUN yum install -y \
+    cairo \
+    pango \
+    gdk-pixbuf2 \
+    freetype \
+    fontconfig \
+    dejavu-sans-fonts \
+    gcc \
+    gcc-c++ \
+    make \
+    libjpeg-devel \
+    zlib-devel \
+    freetype-devel \
+    && yum clean all
+
+# Requirements - use weasyprint version compatible with pango 1.42 (Amazon Linux 2)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Code & fonts
+COPY lambda_pdf.py ${LAMBDA_TASK_ROOT}
+COPY fonts/ ${LAMBDA_TASK_ROOT}/fonts/
+
+CMD ["lambda_pdf.lambda_handler"]
