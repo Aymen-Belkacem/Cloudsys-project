@@ -41,7 +41,10 @@ def create_lambda():
         Layers=[PANDAS_LAYER_ARN],
         Environment={
             "Variables": {
-                "S3_BUCKET_NAME": BUCKET_NAME
+                "S3_BUCKET_NAME": BUCKET_NAME,
+                "DOCDB_HOST": os.environ["DOCDB_HOST"],
+                "DOCDB_USERNAME": os.environ["DOCDB_USERNAME"],
+                "DOCDB_PASSWORD": os.environ["DOCDB_PASSWORD"],
             }
         },
         # Security group for the lambda function
