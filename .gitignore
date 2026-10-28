@@ -1,0 +1,42 @@
+# Build artifacts
+*.zip
+*.tar
+*.tar.gz
+package*/
+package_ai/
+.venv*/
+.venv_pdf/
+.venv_build/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Local config
+.env
+.env.local
+
+# PDF test outputs
+*.pdf
+/tmp/report_*.pdf
+
+# Docker
+lambda-image.tar
+
+# Misc
+.DS_Store
+response.json
+lambda_pdf_weasyprint.py
+lambda-entrypoint.sh
+lambda_ai.zip
+lambda_pdf_linux.zip
+lambda_pdf_weasyprint.py
+package_ai/
+Project3.pdf
+"pr\303\251sentation projet CloudSys.md"
