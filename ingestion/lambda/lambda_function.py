@@ -2,8 +2,27 @@ import boto3
 import pandas as pd
 from io import BytesIO
 from urllib.parse import unquote_plus
+import os
+from pymongo import MongoClient
 
 s3 = boto3.client("s3")
+
+def connect_db():
+    client = MongoClient(
+        host=os.environ["DOCDB_HOST"],
+        port=27017,
+        username=os.environ["DOCDB_USERNAME"],
+        password=os.environ["DOCDB_PASSWORD"],
+        authSource="admin",
+        tls=True,
+        tlsCAFile="/var/task/global-bundle.pem",
+        replicaSet="rs0",
+        retryWrites=False,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+    )
+    return client
 
 def proccess_csv(content: bytes) -> pd.DataFrame:
     df = pd.read_csv(BytesIO(content),thousands="'",decimal=".")
@@ -62,15 +81,17 @@ def add_columns(df: pd.DataFrame):
     return df
 
 def lambda_handler(event, context):
+
+    client = connect_db()
+    result = client.admin.command("ping")
+    print("Connexion DocumentDB réussie :", result)
+
     for record in event.get("Records", []):
         bucket = record["s3"]["bucket"]["name"]
         key = unquote_plus(record["s3"]["object"]["key"])
 
         # Download CSV from S3
-        response = s3.get_object(
-            Bucket=bucket,
-            Key=key
-        )
+        response = s3.get_object(Bucket=bucket, Key=key)
 
         with response["Body"] as body:
             content = body.read()

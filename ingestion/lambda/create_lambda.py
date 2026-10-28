@@ -11,7 +11,7 @@ ROLE_NAME = os.environ["IAM_ROLE_NAME"]
 BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 LAMBDA_NAME = os.environ["LAMBDA_NAME"]
 RUNTIME = os.environ["LAMBDA_RUNTIME"]
-PANDAS_LAYER_ARN = os.environ["PANDAS_LAMBDA_LAYER_ARN"]
+LAYERs_ARNs = os.environ["LAMBDA_LAYERS_ARNS"]
 
 iam = boto3.client("iam")
 lambda_client = boto3.client("lambda", region_name=REGION)
@@ -25,6 +25,7 @@ def create_deployment_package():
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.write("lambda_function.py", arcname="lambda_function.py")
+        zip_file.write("global-bundle.pem", arcname="global-bundle.pem")
     return buffer.getvalue()
 
 
@@ -38,7 +39,7 @@ def create_lambda():
         Role=role_arn,
         Handler="lambda_function.lambda_handler",
         Code={"ZipFile": package},
-        Layers=[PANDAS_LAYER_ARN],
+        Layers=[layer for layer in LAYERs_ARNs.split(",")],
         Environment={
             "Variables": {
                 "S3_BUCKET_NAME": BUCKET_NAME,
