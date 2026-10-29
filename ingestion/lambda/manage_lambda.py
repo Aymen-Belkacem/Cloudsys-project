@@ -23,6 +23,7 @@ def create_deployment_package():
 
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.write(source, arcname="lambda_function.py")
+        zip_file.write("global-bundle.pem", arcname="global-bundle.pem")
 
     return buffer.getvalue()
 

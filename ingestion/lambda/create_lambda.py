@@ -44,6 +44,8 @@ def create_lambda():
             "Variables": {
                 "S3_BUCKET_NAME": BUCKET_NAME,
                 "DOCDB_HOST": os.environ["DOCDB_HOST"],
+                "DOCDB_DATABASE": os.environ["DOCDB_DATABASE"],
+                "DOCDB_COLLECTION": os.environ["DOCDB_COLLECTION"],
                 "DOCDB_USERNAME": os.environ["DOCDB_USERNAME"],
                 "DOCDB_PASSWORD": os.environ["DOCDB_PASSWORD"],
             }
@@ -53,8 +55,8 @@ def create_lambda():
             "SubnetIds": [subnet.strip() for subnet in os.environ["LAMBDA_SUBNET_IDS"].split(",")],
             "SecurityGroupIds": [os.environ["LAMBDA_SECURITY_GROUP_ID"]],
         },
-        Timeout=30,
-        MemorySize=256,
+        Timeout=150,
+        MemorySize=1024,
         Description="Read files from an S3 bucket and process them",
     )
 
