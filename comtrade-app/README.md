@@ -56,17 +56,22 @@ To force one: `AWS_REGION=eu-west-3 ./infra/deploy.sh`.
 - The page shows "Platform: AWS ECS (Fargate)" and the "ECS task" block.
 - The button in the "Interactive test" block increments the counter: WebSockets
   go through the ALB.
-- Logs: `aws logs tail /ecs/comtrade-app --follow`
+- Logs: `aws logs tail /ecs/bdcs-g3-streamlit --follow`
 
 ## 4. Delete everything
 
 ```bash
-./infra/teardown.sh               # service + ALB, cluster, ECR, logs
+./infra/teardown.sh               # service, cluster, ECR, logs
 ./infra/teardown.sh --delete-iam  # same + IAM roles
 ```
 
-> ⚠️ As long as the service exists, the ALB and the Fargate task are billed,
-> even with no traffic. Run `teardown.sh` at the end of every work session.
+> ⚠️ As long as the service exists, the Fargate task is billed, even with no
+> traffic. Run `teardown.sh` at the end of every work session.
+>
+> The ALB is managed by ECS and shared by every Express service on the same
+> network: it stays in place as long as another service uses it. Do not delete it.
+
+All resources are named `bdcs-g3-<name>` (see `NAME_PREFIX` in `infra/config.env`).
 
 ## Prerequisites
 

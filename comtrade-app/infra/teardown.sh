@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Destroys the resources created by deploy.sh, to stop billing.
 #
-#   - ECS Express Mode service (ECS also removes the ALB, target group,
-#     security groups and autoscaling it created)
+#   - ECS Express Mode service (ECS also removes its target group and
+#     autoscaling; the ALB is shared and only goes once no service uses it)
 #   - ECS cluster
 #   - ECR repository and all its images
 #   - CloudWatch log group
@@ -34,7 +34,7 @@ done
 
 echo "Region: $AWS_REGION"
 echo "Resources to delete:"
-echo "  - ECS Express service  $SERVICE_NAME (cluster $CLUSTER_NAME) + managed ALB"
+echo "  - ECS Express service  $SERVICE_NAME (cluster $CLUSTER_NAME)"
 echo "  - ECS cluster          $CLUSTER_NAME"
 echo "  - ECR repository       $ECR_REPO (all images)"
 echo "  - log group            $LOG_GROUP"
