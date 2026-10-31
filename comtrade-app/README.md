@@ -19,7 +19,7 @@ comtrade-app/
 ├── app/
 │   ├── app.py                 # entry point, page navigation
 │   ├── matrix_page.py         # heatmap page
-│   ├── matrix.py              # mirror matching and anomaly rule (no Streamlit)
+│   ├── matrix.py              # mirror matching and anomaly rule
 │   ├── countries.py           # country names, Comtrade aggregates
 │   ├── status_page.py         # status report
 │   ├── db.py                  # DocumentDB client and queries
@@ -59,8 +59,7 @@ docker compose down -v
 ```
 
 AI reports use the real Lambda and S3 bucket, even locally: the app container
-mounts `~/.aws` read-only and uses your credentials. Each new report costs a few
-cents of Bedrock.
+mounts `~/.aws` read-only and uses the user's credentials.
 
 ## AI reports
 
@@ -88,7 +87,7 @@ chmod +x infra/*.sh        # once
 ```
 
 The first run asks for the DocumentDB password (hidden input) and stores it in
-Secrets Manager. Never put it in `config.env`: this file is committed.
+Secrets Manager.
 
 The script then creates, in order: the ECR repository, the image (build + push),
 the IAM roles (execution, infrastructure and task), the CloudWatch log group, the app
@@ -118,8 +117,8 @@ To force one: `AWS_REGION=eu-west-3 ./infra/deploy.sh`.
 ./infra/teardown.sh --delete-db-access  # same + app security group, its rule, password secret
 ```
 
-> WARNING!! As long as the service exists, the Fargate task is billed, even with no
-> traffic. Run `teardown.sh` at the end of every work session.
+> WARNING! As long as the service exists, the Fargate task is billed, even with no
+> traffic. Run `teardown.sh` at the end of every work session, or until a monitoring service is put in place.
 >
 > The ALB is managed by ECS and shared by every Express service on the same
 > network: it stays in place as long as another service uses it. Do not delete it.
@@ -129,9 +128,10 @@ All resources are named `bdcs-g3-<name>` (see `NAME_PREFIX` in `infra/config.env
 ## Prerequisites
 
 - Recent AWS CLI v2 (must know `aws ecs create-express-gateway-service`)
-- Docker Desktop with WSL integration enabled
+- Docker Desktop (preferably on Linux or with WSL integration enabled)
 - The DocumentDB password
 
 ## Next steps
 
-- Authentication with Cognito, if time allows.
+- Authentication with Cognito
+- Advanced Monitoring with CLoudwatch
