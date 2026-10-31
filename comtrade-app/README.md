@@ -73,7 +73,7 @@ is reused without a new call. To regenerate it, delete the file.
 ## Run the tests
 
 ```bash
-uv run --no-project --with pandas --with pytest --with boto3 --with streamlit pytest
+uv run --no-project --python 3.12 --with pandas --with pytest --with boto3 --with streamlit pytest
 ```
 
 ## 2. Deploy to AWS (from WSL)

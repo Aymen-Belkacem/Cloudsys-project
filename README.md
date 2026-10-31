@@ -14,4 +14,3 @@ AWS architecture that detects trade anomalies in **UN Comtrade** data
 | `comtrade-app/` | Step 2: the deployed Streamlit app (Docker, ECR, ECS Express Mode). See its [README](comtrade-app/README.md). |
 | `Doc/` | Project documentation: architecture, description, presentation, project list. |
 | `data/` | Sample bilateral trade data (`Bilateral_data.csv` / `.xlsx`) and its description. |
-| `pyproject.toml`, `.python-version` | Local Python (uv) workspace settings, not part of the deployed app. |
