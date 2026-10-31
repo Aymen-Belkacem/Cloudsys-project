@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 import markdown2
 from weasyprint import HTML, CSS
 
+try:
+    import pymongo
+except ImportError:
+    pymongo = None
+
 CSS_STYLES = CSS(string="""
     @page { size: A4; margin: 2cm; }
     body { font-family: "DejaVu Sans", sans-serif; font-size: 10pt; line-height: 1.45; color: #1a1a2e; }
@@ -104,8 +109,35 @@ def lambda_handler(event, context):
         "bucket": bucket_name,
         "presigned_url": presigned_url,
         "status": "COMPLETED",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "anomaly_data": anomaly,
+        "ai_explanation": explanation
     }
+
+    # Insertion des métadonnées dans DocumentDB
+    if pymongo:
+        try:
+            docdb_uri = os.environ.get("DOCDB_URI")
+            docdb_database = os.environ.get("DOCDB_DATABASE", "trade_data")
+            ca_file = "/opt/python/global-bundle.pem"
+
+            if docdb_uri:
+                client = pymongo.MongoClient(
+                    docdb_uri,
+                    tls=True,
+                    tlsCAFile=ca_file,
+                    serverSelectionTimeoutMS=5000
+                )
+                db = client[docdb_database]
+                db.reports_metadata.insert_one(metadata_doc)
+                print(f"Metadonnees inserees dans DocumentDB pour {anomaly_id}")
+            else:
+                print("DOCDB_URI non configure, metadonnées non insérées dans DocumentDB")
+        except Exception as e:
+            print(f"Erreur insertion metadonnées DocumentDB : {e}")
+    else:
+        print("pymongo non disponible, metadonnées non insérées dans DocumentDB")
+
     print("Metadonnees pour DocumentDB :", json.dumps(metadata_doc, ensure_ascii=False))
 
     return {
