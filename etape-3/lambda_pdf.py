@@ -161,22 +161,37 @@ def lambda_handler(event, context):
         # Insert into DocumentDB (non-blocking, best effort)
         if not local_test:
             try:
-                ca_file = "/opt/python/global-bundle.pem"
-                docdb_uri = os.environ.get("DOCDB_URI")
-                docdb_database = os.environ.get("DOCDB_DATABASE", "trade_data")
+                # Use environment variables like Luca/Aymen's code
+                docdb_host = os.environ.get("DOCDB_HOST", "bdcs-g3-documentdb-cluster.cluster-c9ackrdwcwiz.us-east-1.docdb.amazonaws.com")
+                docdb_username = os.environ.get("DOCDB_USERNAME", "clusteradmin")
+                docdb_password = os.environ.get("DOCDB_PASSWORD", "myclusterpassword")
+                docdb_database = os.environ.get("DOCDB_DATABASE", "ingestion")
+                docdb_collection = os.environ.get("DOCDB_COLLECTION", "reports_metadata")
+                docdb_tls = os.environ.get("DOCDB_TLS", "true").lower() == "true"
 
-                if docdb_uri:
-                    client = pymongo.MongoClient(
-                        docdb_uri,
-                        tls=True,
-                        tlsCAFile=ca_file,
-                        serverSelectionTimeoutMS=5000
-                    )
-                    db = client[docdb_database]
-                    db.reports_metadata.insert_one(metadata_doc)
-                    print(f"Metadata inserted into DocumentDB for {anomaly_id}")
-                else:
-                    print("DOCDB_URI not set, skipping DocumentDB insert")
+                # Build MongoDB URI
+                docdb_uri = f"mongodb://{docdb_username}:{docdb_password}@{docdb_host}:27017"
+
+                # Certificate from Dockerfile
+                ca_file = "/opt/python/global-bundle.pem"
+
+                # DocumentDB connection options (like Aymen's code)
+                documentdb_options = {
+                    "tls": docdb_tls,
+                    "tlsCAFile": "/opt/python/global-bundle.pem",
+                    "replicaSet": "rs0",
+                    "readPreference": "secondaryPreferred",
+                    "retryWrites": False,
+                }
+
+                client = pymongo.MongoClient(
+                    docdb_uri,
+                    serverSelectionTimeoutMS=5000,
+                    **(documentdb_options if docdb_tls else {})
+                )
+                db = client[os.environ.get("DOCDB_DATABASE", "ingestion")]
+                db[os.environ.get("DOCDB_COLLECTION", "reports_metadata")].insert_one(metadata_doc)
+                print(f"Metadata inserted into DocumentDB for {anomaly_id}")
             except Exception as e:
                 print(f"Warning: Failed to insert metadata into DocumentDB: {e}")
                 # Don't fail the Lambda if DocDB insert fails
