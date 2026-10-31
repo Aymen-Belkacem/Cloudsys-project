@@ -9,6 +9,9 @@ The app connects to Amazon DocumentDB and has two pages:
 - **Status report**: version, environment, ECS task, database connection,
   collections and a sample document. Useful for debugging.
 
+The app URL is public, so errors show a generic message on AWS: the details are in
+the logs. Only `APP_ENV=local` shows them in the page, with the container hostname.
+
 ## Layout
 
 ```
@@ -20,6 +23,7 @@ comtrade-app/
 │   ├── countries.py           # country names, Comtrade aggregates
 │   ├── status_page.py         # status report
 │   ├── db.py                  # DocumentDB client and queries
+│   ├── errors.py              # error display, details hidden outside local runs
 │   ├── reports.py             # AI Lambda call, PDF reports from S3
 │   ├── requirements.txt
 │   └── .streamlit/config.toml # port 8501, listens on 0.0.0.0
@@ -27,7 +31,7 @@ comtrade-app/
 ├── .dockerignore
 ├── docker-compose.yml         # local development only (app + MongoDB)
 ├── local/seed.py              # loads data/Bilateral_data.csv into the local MongoDB
-├── tests/                     # unit tests (anomaly computation, report job)
+├── tests/                     # unit tests (anomaly computation, report job, errors)
 ├── pytest.ini
 └── infra/
     ├── config.env             # resource names, region, CPU/memory, network, DocumentDB

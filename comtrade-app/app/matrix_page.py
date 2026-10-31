@@ -10,6 +10,7 @@ from pymongo.errors import PyMongoError
 import reports
 from countries import NON_COUNTRY_CODES, country_name
 from db import get_client, get_exporters, get_products, get_trade_rows
+from errors import show_error
 from matrix import (
     CONSISTENT,
     FLAGGED,
@@ -94,7 +95,7 @@ def _show_report_section(event: dict) -> None:
         else:
             st.info("Generating the report, this takes about 30 seconds...")
     except (BotoCoreError, ClientError) as exc:
-        st.error(f"Report service error: {exc}")
+        show_error("Report service error.", exc)
 
 
 def _show_anomaly(
@@ -157,4 +158,4 @@ try:
     if "heatmap_selection" in st.session_state:
         _show_heatmap(*st.session_state.heatmap_selection)
 except PyMongoError as exc:
-    st.error(f"Database error: {exc}")
+    show_error("Database error.", exc)

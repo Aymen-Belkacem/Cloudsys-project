@@ -1,6 +1,7 @@
 """Status report: runtime, ECS task, DocumentDB connection and sample document."""
 
 import json
+import logging
 import os
 import platform
 import socket
@@ -11,10 +12,13 @@ from datetime import datetime, timezone
 import streamlit as st
 
 from db import DOCDB_COLLECTION, DOCDB_DATABASE, DOCDB_HOST, get_client
+from errors import IS_LOCAL, show_error
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "Comtrade Anomalies"
 APP_VERSION = os.getenv("APP_VERSION", "dev")
-APP_ENV = os.getenv("APP_ENV", "local")
+APP_ENV = os.getenv("APP_ENV", "production")
 
 
 @st.cache_resource
@@ -37,13 +41,13 @@ def _ecs_task_metadata() -> dict | None:
             data = json.load(resp)
         return {
             "Cluster": data.get("Cluster", "?").split("/")[-1],
-            "Task ARN": data.get("TaskARN", "?"),
             "Availability Zone": data.get("AvailabilityZone", "?"),
             "Launch type": data.get("LaunchType", "?"),
             "Task definition": f'{data.get("Family", "?")}:{data.get("Revision", "?")}',
         }
     except Exception as exc:  # noqa: BLE001 - the status report must never crash
-        return {"Metadata read error": str(exc)}
+        logger.error("ECS metadata read failed: %s", exc)
+        return {"Metadata": "Read failed, see the logs"}
 
 
 def _format_uptime(started: datetime) -> str:
@@ -70,7 +74,7 @@ def _read_database() -> dict:
             "sample": database[DOCDB_COLLECTION].find_one(),
         }
     except Exception as exc:  # noqa: BLE001 - the status report must never crash
-        return {"state": "Connection failed", "error": str(exc)}
+        return {"state": "Connection failed", "error": exc}
 
 
 st.title(f"{APP_NAME} - Status report")
@@ -86,27 +90,18 @@ col2.metric("Version", APP_VERSION)
 col3.metric("Environment", APP_ENV)
 col4.metric("Uptime", _format_uptime(_started_at()))
 
+runtime_info = {
+    "Platform": runtime,
+    "Server time (UTC)": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+    "Python": sys.version.split()[0],
+    "Streamlit": st.__version__,
+    "OS / architecture": f"{platform.system()} / {platform.machine()}",
+}
+if IS_LOCAL:
+    runtime_info["Container hostname"] = socket.gethostname()
+
 st.subheader("Runtime")
-st.table(
-    {
-        "Parameter": [
-            "Platform",
-            "Container hostname",
-            "Server time (UTC)",
-            "Python",
-            "Streamlit",
-            "OS / architecture",
-        ],
-        "Value": [
-            runtime,
-            socket.gethostname(),
-            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            sys.version.split()[0],
-            st.__version__,
-            f"{platform.system()} / {platform.machine()}",
-        ],
-    }
-)
+st.table({"Parameter": list(runtime_info.keys()), "Value": list(runtime_info.values())})
 
 if ecs_meta:
     st.subheader("ECS task")
@@ -121,7 +116,7 @@ st.table(
 )
 
 if "error" in db_report:
-    st.error(db_report["error"])
+    show_error("Database connection failed.", db_report["error"])
 
 if "counts" in db_report:
     st.table(
