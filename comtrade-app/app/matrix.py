@@ -5,7 +5,7 @@ Only raw columns are used: each flow is reported twice, by the exporter
 (FOB) and by the importer (CIF), and the two sides are matched month by month.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import pandas as pd
 
@@ -89,6 +89,44 @@ def compute_cells(matched: pd.DataFrame, frequency: str) -> pd.DataFrame:
     cells.loc[cells["Gap"] > GAP_THRESHOLD, "Anomaly_type"] = GAP_TOO_HIGH
     cells.loc[cells["Fob"] > cells["Cif"], "Anomaly_type"] = FOB_ABOVE_CIF
     return cells
+
+
+def route_gap(matched: pd.DataFrame, importer: str) -> float:
+    """Gap of a route over all its months, used as historical context."""
+    route = matched[matched["Importer"] == importer]
+    fob = route["Fob_value"].sum() / route["Fob_qty"].sum()
+    cif = route["Cif_value"].sum() / route["Cif_qty"].sum()
+    return (cif - fob) / fob
+
+
+def build_anomaly_event(
+    cell: pd.Series,
+    exporter: str,
+    product: tuple[int, str],
+    historical_gap: float,
+    country_name: Callable[[str], str],
+) -> dict:
+    """Build the input of the AI Lambda.
+
+    Its keys are the ones read by the Lambda code: a missing key would silently
+    end up as "None" in the prompt sent to the LLM. Names are easier for the LLM
+    than codes. The id keeps the codes, because it also names the report file.
+    """
+    importer = cell["Importer"]
+    hs4, product_name = product
+    return {
+        "anomaly_id": f"{exporter}_{importer}_{hs4}_{cell['Period']}",
+        "period": cell["Period"],
+        "reporter": country_name(exporter),
+        "partner": country_name(importer),
+        "hs_code": str(hs4),
+        "product_name": product_name,
+        "fob_unit_price": round(float(cell["Fob"]), 2),
+        "cif_unit_price": round(float(cell["Cif"]), 2),
+        "gap_pct": round(float(cell["Gap"]) * 100, 1),
+        "anomaly_type": cell["Anomaly_type"],
+        "historical_context": f"Historical gap on this route: {historical_gap:+.1%}.",
+    }
 
 
 def build_matrix(cells: pd.DataFrame, partners: list[str], periods: list[str]) -> pd.DataFrame:

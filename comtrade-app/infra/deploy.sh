@@ -3,7 +3,7 @@
 #   1. DocumentDB password secret (asked once, stored in Secrets Manager)
 #   2. Amazon ECR repository
 #   3. Docker image build + push
-#   4. IAM roles (execution + infrastructure) required by ECS Express Mode
+#   4. IAM roles (execution + infrastructure for ECS Express Mode, task for the app)
 #   5. CloudWatch log group
 #   6. security group of the app + its access rule on DocumentDB
 #   7. ECS cluster
@@ -112,9 +112,9 @@ docker push "$IMAGE_URI"
 # --------------------------------------------------------------------------- #
 ROLES_CREATED=false
 
-# ensure_role <name> <service principal> <managed policy ARN>
+# ensure_role <name> <service principal> [managed policy ARN]
 ensure_role() {
-  local name="$1" principal="$2" policy_arn="$3"
+  local name="$1" principal="$2" policy_arn="${3:-}"
   if aws iam get-role --role-name "$name" >/dev/null 2>&1; then
     info "Role $name: already exists"
   else
@@ -132,7 +132,9 @@ ensure_role() {
     ROLES_CREATED=true
   fi
   # attach-role-policy is idempotent
-  aws iam attach-role-policy --role-name "$name" --policy-arn "$policy_arn"
+  if [[ -n "$policy_arn" ]]; then
+    aws iam attach-role-policy --role-name "$name" --policy-arn "$policy_arn"
+  fi
 }
 
 log "IAM roles"
@@ -157,8 +159,36 @@ aws iam put-role-policy \
     }]
   }"
 
+# Task role: used by the application code to start the AI Lambda and read its
+# reports. ListBucket makes a missing report return NoSuchKey instead of AccessDenied.
+ensure_role "$TASK_ROLE_NAME" "ecs-tasks.amazonaws.com"
+aws iam put-role-policy \
+  --role-name "$TASK_ROLE_NAME" \
+  --policy-name invoke-ai-and-read-reports \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": \"lambda:InvokeFunction\",
+        \"Resource\": \"arn:aws:lambda:${AWS_REGION}:${ACCOUNT_ID}:function:${AI_LAMBDA_NAME}\"
+      },
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": \"s3:GetObject\",
+        \"Resource\": \"arn:aws:s3:::${REPORTS_BUCKET}/report_*\"
+      },
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": \"s3:ListBucket\",
+        \"Resource\": \"arn:aws:s3:::${REPORTS_BUCKET}\"
+      }
+    ]
+  }"
+
 EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${EXEC_ROLE_NAME}"
 INFRA_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${INFRA_ROLE_NAME}"
+TASK_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${TASK_ROLE_NAME}"
 
 if [[ "$ROLES_CREATED" == true ]]; then
   info "Waiting for IAM propagation (15 s)..."
@@ -230,7 +260,10 @@ PRIMARY_CONTAINER=$(cat <<JSON
     { "name": "DOCDB_HOST", "value": "${DOCDB_HOST}" },
     { "name": "DOCDB_USERNAME", "value": "${DOCDB_USERNAME}" },
     { "name": "DOCDB_DATABASE", "value": "${DOCDB_DATABASE}" },
-    { "name": "DOCDB_COLLECTION", "value": "${DOCDB_COLLECTION}" }
+    { "name": "DOCDB_COLLECTION", "value": "${DOCDB_COLLECTION}" },
+    { "name": "AI_LAMBDA_NAME", "value": "${AI_LAMBDA_NAME}" },
+    { "name": "REPORTS_BUCKET", "value": "${REPORTS_BUCKET}" },
+    { "name": "AWS_REGION", "value": "${AWS_REGION}" }
   ],
   "secrets": [
     { "name": "DOCDB_PASSWORD", "valueFrom": "${SECRET_ARN}" }
@@ -251,6 +284,7 @@ if [[ "$service_status" == "ACTIVE" ]]; then
     --query 'services[0].serviceArn' --output text)"
   aws ecs update-express-gateway-service \
     --service-arn "$SERVICE_ARN" \
+    --task-role-arn "$TASK_ROLE_ARN" \
     --primary-container "$PRIMARY_CONTAINER" \
     --health-check-path "$HEALTH_CHECK_PATH" \
     --cpu "$TASK_CPU" \
@@ -264,6 +298,7 @@ else
     --service-name "$SERVICE_NAME" \
     --cluster "$CLUSTER_NAME" \
     --execution-role-arn "$EXEC_ROLE_ARN" \
+    --task-role-arn "$TASK_ROLE_ARN" \
     --infrastructure-role-arn "$INFRA_ROLE_ARN" \
     --primary-container "$PRIMARY_CONTAINER" \
     --health-check-path "$HEALTH_CHECK_PATH" \

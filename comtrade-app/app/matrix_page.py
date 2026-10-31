@@ -1,9 +1,13 @@
 """Anomaly heatmap: exporter, product and frequency in, top partners x periods out."""
 
+import time
+
 import pandas as pd
 import streamlit as st
+from botocore.exceptions import BotoCoreError, ClientError
 from pymongo.errors import PyMongoError
 
+import reports
 from countries import NON_COUNTRY_CODES, country_name
 from db import get_client, get_exporters, get_products, get_trade_rows
 from matrix import (
@@ -11,10 +15,12 @@ from matrix import (
     FLAGGED,
     FREQUENCIES,
     NO_DATA,
+    build_anomaly_event,
     build_matrix,
     compute_cells,
     list_periods,
     match_mirrors,
+    route_gap,
     top_partners,
 )
 
@@ -22,6 +28,9 @@ CELL_COLORS = {CONSISTENT: "#ffffff", FLAGGED: "#ff0000", NO_DATA: "#e0e0e0"}
 RED_CELL_HINT = "Click a red cell to see the details of the anomaly."
 TOP_PARTNERS_COUNT = 10
 ROW_HEIGHT = 35
+REPORT_POLL_SECONDS = 5
+REPORT_TIMEOUT_SECONDS = 180
+PDF_VIEWER_HEIGHT = 800
 
 
 def _show_configuration_panel() -> None:
@@ -49,15 +58,63 @@ def _style_heatmap(matrix: pd.DataFrame):
     return labels.style.apply(lambda _: colors, axis=None)
 
 
-def _show_anomaly(cell: pd.Series, exporter: str, product: tuple[int, str]) -> None:
+def _show_report_section(event: dict) -> None:
+    """Show the report if it exists, else offer to generate it and wait for it."""
+    anomaly_id = event["anomaly_id"]
+    pending = st.session_state.setdefault("pending_reports", {})
+    timed_out = st.session_state.setdefault("timed_out_reports", set())
+    started = pending.get(anomaly_id)
+    try:
+        report = reports.fetch_report(anomaly_id)
+        if report is not None:
+            timed_out.discard(anomaly_id)
+            if started is not None:
+                del pending[anomaly_id]
+                st.rerun()  # a full rerun stops the polling
+            st.pdf(report, height=PDF_VIEWER_HEIGHT, key=f"pdf-{anomaly_id}")
+            st.download_button(
+                "Download PDF",
+                report,
+                file_name=reports.report_key(anomaly_id),
+                mime="application/pdf",
+                on_click="ignore",
+            )
+        elif started is None:
+            if anomaly_id in timed_out:
+                st.error("No report after 3 minutes. See the logs of the AI Lambda.")
+            if st.button("Analyze anomaly"):
+                reports.request_report(event)
+                timed_out.discard(anomaly_id)
+                pending[anomaly_id] = time.time()
+                st.rerun()
+        elif time.time() - started > REPORT_TIMEOUT_SECONDS:
+            del pending[anomaly_id]
+            timed_out.add(anomaly_id)
+            st.rerun()
+        else:
+            st.info("Generating the report, this takes about 30 seconds...")
+    except (BotoCoreError, ClientError) as exc:
+        st.error(f"Report service error: {exc}")
+
+
+def _show_anomaly(
+    cell: pd.Series, exporter: str, product: tuple[int, str], matched: pd.DataFrame
+) -> None:
     st.subheader(f"{country_name(exporter)} to {country_name(cell['Importer'])}, {cell['Period']}")
     st.caption(f"{product[0]} - {product[1]} | Anomaly: {cell['Anomaly_type']}")
     fob_col, cif_col, gap_col = st.columns(3)
     fob_col.metric("FOB (USD/t)", f"{cell['Fob']:,.2f}")
     cif_col.metric("CIF (USD/t)", f"{cell['Cif']:,.2f}")
     gap_col.metric("Gap", f"{cell['Gap']:+.1%}")
-    if st.button("Analyze anomaly"):
-        st.info("AI analysis is not wired yet: this is a placeholder message.")
+
+    if not reports.is_configured():
+        st.info("AI reports are not configured (AI_LAMBDA_NAME or REPORTS_BUCKET is not set).")
+        return
+    event = build_anomaly_event(
+        cell, exporter, product, route_gap(matched, cell["Importer"]), country_name
+    )
+    is_pending = event["anomaly_id"] in st.session_state.get("pending_reports", {})
+    st.fragment(_show_report_section, run_every=REPORT_POLL_SECONDS if is_pending else None)(event)
 
 
 def _show_heatmap(exporter: str, product: tuple[int, str], frequency: str) -> None:
@@ -67,7 +124,8 @@ def _show_heatmap(exporter: str, product: tuple[int, str], frequency: str) -> No
         st.info(f"{country_name(exporter)} reports no exports of {product[1]}.")
         return
 
-    cells = compute_cells(match_mirrors(rows, exporter), frequency)
+    matched = match_mirrors(rows, exporter)
+    cells = compute_cells(matched, frequency)
     matrix = build_matrix(cells, partners, list_periods(rows, frequency))
 
     event = st.dataframe(
@@ -85,7 +143,7 @@ def _show_heatmap(exporter: str, product: tuple[int, str], frequency: str) -> No
     row, period = event.selection.cells[0]
     selected = cells[(cells["Importer"] == partners[row]) & (cells["Period"] == period)]
     if not selected.empty and selected.iloc[0]["Status"] == FLAGGED:
-        _show_anomaly(selected.iloc[0], exporter, product)
+        _show_anomaly(selected.iloc[0], exporter, product, matched)
 
 
 st.title("Trade anomalies")

@@ -5,7 +5,7 @@ The app connects to Amazon DocumentDB and has two pages:
 - **Trade anomalies**: pick an exporter, a product and a frequency (yearly,
   quarterly or monthly), then read the heatmap of its top 10 partner countries.
   White = consistent, red = flagged, grey = no mirror data. A red cell shows the
-  FOB, CIF and gap. Its "Analyze anomaly" button is a stub for now.
+  FOB, CIF and gap, and generates or displays the AI report (PDF).
 - **Status report**: version, environment, ECS task, database connection,
   collections and a sample document. Useful for debugging.
 
@@ -20,13 +20,14 @@ comtrade-app/
 │   ├── countries.py           # country names, Comtrade aggregates
 │   ├── status_page.py         # status report
 │   ├── db.py                  # DocumentDB client and queries
+│   ├── reports.py             # AI Lambda call, PDF reports from S3
 │   ├── requirements.txt
 │   └── .streamlit/config.toml # port 8501, listens on 0.0.0.0
 ├── Dockerfile                 # image pushed to ECR
 ├── .dockerignore
 ├── docker-compose.yml         # local development only (app + MongoDB)
 ├── local/seed.py              # loads data/Bilateral_data.csv into the local MongoDB
-├── tests/                     # unit tests of the anomaly computation
+├── tests/                     # unit tests (anomaly computation, report job)
 ├── pytest.ini
 └── infra/
     ├── config.env             # resource names, region, CPU/memory, network, DocumentDB
@@ -53,10 +54,26 @@ A MongoDB container stands in for DocumentDB. The `seed` service loads
 docker compose down -v
 ```
 
+AI reports use the real Lambda and S3 bucket, even locally: the app container
+mounts `~/.aws` read-only and uses your credentials. Each new report costs a few
+cents of Bedrock.
+
+## AI reports
+
+1. "Analyze anomaly" starts `bdcs-g3-lambda-ai` asynchronously. Its input is not a
+   database row: `build_anomaly_event` in `app/matrix.py` builds the expected keys.
+2. The Lambda writes no answer for the app. It sends the text to
+   `bdcs-g3-lambda-pdf`, which stores `report_<anomaly_id>.pdf` in
+   `bdcs-g3-reports-pdf`.
+3. The page checks S3 every 5 seconds, then shows the PDF with a download button.
+
+The id is `<exporter>_<importer>_<HS4>_<period>`. A report already in the bucket
+is reused without a new call. To regenerate it, delete the file.
+
 ## Run the tests
 
 ```bash
-uv run --no-project --with pandas --with pytest pytest
+uv run --no-project --with pandas --with pytest --with boto3 --with streamlit pytest
 ```
 
 ## 2. Deploy to AWS (from WSL)
@@ -70,7 +87,7 @@ The first run asks for the DocumentDB password (hidden input) and stores it in
 Secrets Manager. Never put it in `config.env`: this file is committed.
 
 The script then creates, in order: the ECR repository, the image (build + push),
-the IAM roles (execution + infrastructure), the CloudWatch log group, the app
+the IAM roles (execution, infrastructure and task), the CloudWatch log group, the app
 security group and its rule on the DocumentDB security group, the ECS cluster and
 the ECS Express Mode service. It waits for the service to be stable, then prints
 the public URL (`https://<service>.ecs.<region>.on.aws`).
@@ -113,5 +130,4 @@ All resources are named `bdcs-g3-<name>` (see `NAME_PREFIX` in `infra/config.env
 
 ## Next steps
 
-- Call to the AI Lambda (step 3) from the "Analyze anomaly" button: add a task
-  role (`--task-role-arn`) with `lambda:InvokeFunction`.
+- Authentication with Cognito, if time allows.

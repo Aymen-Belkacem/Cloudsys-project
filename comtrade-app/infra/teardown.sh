@@ -43,7 +43,7 @@ echo "  - ECS Express service  $SERVICE_NAME (cluster $CLUSTER_NAME)"
 echo "  - ECS cluster          $CLUSTER_NAME"
 echo "  - ECR repository       $ECR_REPO (all images)"
 echo "  - log group            $LOG_GROUP"
-[[ "$DELETE_IAM" == true ]] && echo "  - IAM roles            $EXEC_ROLE_NAME, $INFRA_ROLE_NAME"
+[[ "$DELETE_IAM" == true ]] && echo "  - IAM roles            $EXEC_ROLE_NAME, $INFRA_ROLE_NAME, $TASK_ROLE_NAME"
 [[ "$DELETE_DB_ACCESS" == true ]] && echo "  - DB access            $APP_SG_NAME + rule on $DOCDB_SG_ID, secret $DOCDB_SECRET_NAME"
 
 if [[ "$ASSUME_YES" != true ]]; then
@@ -119,6 +119,7 @@ if [[ "$DELETE_IAM" == true ]]; then
   log "IAM roles"
   delete_role "$EXEC_ROLE_NAME"
   delete_role "$INFRA_ROLE_NAME"
+  delete_role "$TASK_ROLE_NAME"
 fi
 
 # --------------------------------------------------------------------------- #

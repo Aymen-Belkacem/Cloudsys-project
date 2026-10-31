@@ -1,5 +1,7 @@
 """Tests of the mirror matching and of the anomaly rule (Doc/Project3.pdf p. 7-8)."""
 
+import json
+
 import pandas as pd
 import pytest
 
@@ -12,14 +14,31 @@ from matrix import (
     NO_DATA,
     QUARTERLY,
     YEARLY,
+    build_anomaly_event,
     build_matrix,
     compute_cells,
     is_flagged,
     list_periods,
     match_mirrors,
     period_labels,
+    route_gap,
     top_partners,
 )
+
+# Keys read by lambda_ai.py: a missing one would reach the LLM as "None"
+LAMBDA_KEYS = {
+    "anomaly_id",
+    "period",
+    "reporter",
+    "partner",
+    "hs_code",
+    "product_name",
+    "fob_unit_price",
+    "cif_unit_price",
+    "gap_pct",
+    "anomaly_type",
+    "historical_context",
+}
 
 
 def export_row(month, partner, value, qty, reporter="FRA"):
@@ -170,3 +189,43 @@ def test_matrix_has_every_partner_and_period():
     assert matrix.loc["EGY", "2024"] == NO_DATA
     assert matrix.loc["MAR", "2024"] == CONSISTENT
     assert (matrix.loc["ESP"] == NO_DATA).all()
+
+
+def test_route_gap_uses_every_month_of_the_route():
+    rows = rows_of(
+        export_row("2023-01", "EGY", 400, 1.0),
+        import_row("2023-01", "EGY", 440, 1.0),
+        export_row("2024-01", "EGY", 1200, 3.0),
+        import_row("2024-01", "EGY", 1560, 3.0),
+        export_row("2024-01", "MAR", 100, 1.0),
+        import_row("2024-01", "MAR", 900, 1.0),  # other route, ignored
+    )
+    assert route_gap(match_mirrors(rows, "FRA"), "EGY") == pytest.approx(0.25)
+
+
+def test_anomaly_event_matches_the_lambda_input():
+    rows = rows_of(export_row("2023-05", "EGY", 400, 1.0), import_row("2023-05", "EGY", 600, 1.0))
+    cell = compute_cells(match_mirrors(rows, "FRA"), MONTHLY).iloc[0]
+    names = {"FRA": "France", "EGY": "Egypt"}
+    event = build_anomaly_event(cell, "FRA", (1001, "Wheat"), 0.123, names.get)
+    assert set(event) == LAMBDA_KEYS
+    assert event == {
+        "anomaly_id": "FRA_EGY_1001_2023-05",
+        "period": "2023-05",
+        "reporter": "France",
+        "partner": "Egypt",
+        "hs_code": "1001",
+        "product_name": "Wheat",
+        "fob_unit_price": 400.0,
+        "cif_unit_price": 600.0,
+        "gap_pct": 50.0,
+        "anomaly_type": GAP_TOO_HIGH,
+        "historical_context": "Historical gap on this route: +12.3%.",
+    }
+
+
+def test_anomaly_event_is_json_serializable():
+    rows = rows_of(export_row("2023-05", "EGY", 400, 3.0), import_row("2023-05", "EGY", 600, 7.0))
+    cell = compute_cells(match_mirrors(rows, "FRA"), YEARLY).iloc[0]
+    event = build_anomaly_event(cell, "FRA", (1001, "Wheat"), 0.1, str)
+    assert json.loads(json.dumps(event)) == event
