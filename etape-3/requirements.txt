@@ -1,4 +1,4 @@
 boto3
 markdown2
-pymongo==4.8.0
 weasyprint==52.0
+pymongo==4.8.0

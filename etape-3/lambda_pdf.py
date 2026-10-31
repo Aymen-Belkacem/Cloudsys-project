@@ -2,14 +2,27 @@ import boto3
 import os
 import json
 import tempfile
+import traceback
 from datetime import datetime, timezone
+from bson import ObjectId
 import markdown2
 from weasyprint import HTML, CSS
+import pymongo
 
-try:
-    import pymongo
-except ImportError:
-    pymongo = None
+
+class JSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle ObjectId and datetime."""
+    def default(self, obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def json_dumps(obj, **kwargs):
+    """JSON dumps with custom encoder."""
+    return json.dumps(obj, cls=JSONEncoder, **kwargs)
 
 CSS_STYLES = CSS(string="""
     @page { size: A4; margin: 2cm; }
@@ -81,69 +94,107 @@ def lambda_handler(event, context):
     anomaly = event.get("anomaly_data", {})
     explanation = event.get("ai_explanation", "Aucune explication fournie.")
     anomaly_id = anomaly.get("anomaly_id", "unknown_id")
-
+    
     file_name = f"report_{anomaly_id}.pdf"
     local_path = f"/tmp/{file_name}"
+    error_key = f"report_{anomaly_id}.error"
 
-    markdown_to_pdf(explanation, local_path)
-    print(f"PDF genere : {local_path}")
-
-    presigned_url = ""
-    if not local_test:
-        s3_client = boto3.client("s3", region_name=region)
-        s3_client.upload_file(local_path, bucket_name, file_name)
-        print(f"PDF uploade sur S3 : s3://{bucket_name}/{file_name}")
-
-        presigned_url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": bucket_name, "Key": file_name},
-            ExpiresIn=3600
-        )
-    else:
-        presigned_url = f"file://{local_path}"
-        print(f"Mode local - PDF dispo ici : {local_path}")
-
-    metadata_doc = {
-        "anomaly_id": anomaly_id,
-        "s3_key": file_name,
-        "bucket": bucket_name,
-        "presigned_url": presigned_url,
-        "status": "COMPLETED",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "anomaly_data": anomaly,
-        "ai_explanation": explanation
-    }
-
-    # Insertion des métadonnées dans DocumentDB
-    if pymongo:
-        try:
-            docdb_uri = os.environ.get("DOCDB_URI")
-            docdb_database = os.environ.get("DOCDB_DATABASE", "trade_data")
-            ca_file = "/opt/python/global-bundle.pem"
-
-            if docdb_uri:
-                client = pymongo.MongoClient(
-                    docdb_uri,
-                    tls=True,
-                    tlsCAFile=ca_file,
-                    serverSelectionTimeoutMS=5000
+    def write_error_to_s3(error_msg, traceback_str):
+        """Write error details to S3 as .error file"""
+        if not local_test:
+            try:
+                s3_client = boto3.client("s3", region_name=region)
+                error_content = {
+                    "anomaly_id": anomaly_id,
+                    "error": error_msg,
+                    "traceback": traceback_str,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                s3_client.put_object(
+                    Bucket=bucket_name,
+                    Key=error_key,
+                    Body=json_dumps(error_content, ensure_ascii=False).encode('utf-8'),
+                    ContentType='application/json'
                 )
-                db = client[docdb_database]
-                db.reports_metadata.insert_one(metadata_doc)
-                print(f"Metadonnees inserees dans DocumentDB pour {anomaly_id}")
-            else:
-                print("DOCDB_URI non configure, metadonnées non insérées dans DocumentDB")
-        except Exception as e:
-            print(f"Erreur insertion metadonnées DocumentDB : {e}")
-    else:
-        print("pymongo non disponible, metadonnées non insérées dans DocumentDB")
+                print(f"Error file written to S3: {error_key}")
+            except Exception as e:
+                print(f"Failed to write error file to S3: {e}")
 
-    print("Metadonnees pour DocumentDB :", json.dumps(metadata_doc, ensure_ascii=False))
+    try:
+        anomaly = event.get("anomaly_data", {})
+        explanation = event.get("ai_explanation", "Aucune explication fournie.")
+        anomaly_id = anomaly.get("anomaly_id", "unknown_id")
 
-    return {
-        "statusCode": 200,
-        "presigned_url": presigned_url
-    }
+        file_name = f"report_{anomaly_id}.pdf"
+        local_path = f"/tmp/{file_name}"
+
+        markdown_to_pdf(explanation, local_path)
+        print(f"PDF genere : {local_path}")
+
+        presigned_url = ""
+        if not local_test:
+            s3_client = boto3.client("s3", region_name=region)
+            s3_client.upload_file(local_path, bucket_name, file_name)
+            print(f"PDF uploade sur S3 : s3://{bucket_name}/{file_name}")
+
+            presigned_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": file_name},
+                ExpiresIn=3600
+            )
+        else:
+            presigned_url = f"file://{local_path}"
+            print(f"Mode local - PDF dispo ici : {local_path}")
+
+        # Insert metadata into DocumentDB
+        metadata_doc = {
+            "anomaly_id": anomaly_id,
+            "s3_key": file_name,
+            "bucket": bucket_name,
+            "presigned_url": presigned_url,
+            "status": "COMPLETED",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "anomaly_data": anomaly,
+            "ai_explanation": explanation
+        }
+
+        # Insert into DocumentDB (non-blocking, best effort)
+        if not local_test:
+            try:
+                ca_file = "/opt/python/global-bundle.pem"
+                docdb_uri = os.environ.get("DOCDB_URI")
+                docdb_database = os.environ.get("DOCDB_DATABASE", "trade_data")
+
+                if docdb_uri:
+                    client = pymongo.MongoClient(
+                        docdb_uri,
+                        tls=True,
+                        tlsCAFile=ca_file,
+                        serverSelectionTimeoutMS=5000
+                    )
+                    db = client[docdb_database]
+                    db.reports_metadata.insert_one(metadata_doc)
+                    print(f"Metadata inserted into DocumentDB for {anomaly_id}")
+                else:
+                    print("DOCDB_URI not set, skipping DocumentDB insert")
+            except Exception as e:
+                print(f"Warning: Failed to insert metadata into DocumentDB: {e}")
+                # Don't fail the Lambda if DocDB insert fails
+
+        print("Metadonnees pour DocumentDB :", json_dumps(metadata_doc, ensure_ascii=False))
+
+        return {
+            "statusCode": 200,
+            "presigned_url": presigned_url
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        traceback_str = traceback.format_exc()
+        print(f"Error processing PDF generation: {error_msg}")
+        print(traceback_str)
+        write_error_to_s3(error_msg, traceback_str)
+        raise
 
 if __name__ == "__main__":
     os.environ["LOCAL_TEST"] = "true"

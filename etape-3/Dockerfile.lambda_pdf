@@ -16,6 +16,10 @@ RUN yum install -y \
     freetype-devel \
     && yum clean all
 
+# Create directory for certificate and download DocumentDB TLS certificate
+RUN mkdir -p /opt/python && \
+    curl -o /opt/python/global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
 # Requirements - use weasyprint version compatible with pango 1.42 (Amazon Linux 2)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
