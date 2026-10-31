@@ -92,7 +92,7 @@ def lambda_handler(event, context):
     local_test = os.environ.get("LOCAL_TEST") == "true"
     
     anomaly = event.get("anomaly_data", {})
-    explanation = event.get("ai_explanation", "Aucune explication fournie.")
+    explanation = event.get("ai_explanation", "No explanation provided.")
     anomaly_id = anomaly.get("anomaly_id", "unknown_id")
     
     file_name = f"report_{anomaly_id}.pdf"
@@ -122,7 +122,7 @@ def lambda_handler(event, context):
 
     try:
         anomaly = event.get("anomaly_data", {})
-        explanation = event.get("ai_explanation", "Aucune explication fournie.")
+        explanation = event.get("ai_explanation", "No explanation provided.")
         anomaly_id = anomaly.get("anomaly_id", "unknown_id")
 
         file_name = f"report_{anomaly_id}.pdf"
@@ -175,7 +175,8 @@ def lambda_handler(event, context):
                 # Certificate from Dockerfile
                 ca_file = "/opt/python/global-bundle.pem"
 
-                # DocumentDB connection options (like Aymen's code)
+                # DocumentDB connection options - try multiple strategies
+                # Strategy 1: Standard DocumentDB options (like Aymen's code)
                 documentdb_options = {
                     "tls": docdb_tls,
                     "tlsCAFile": "/opt/python/global-bundle.pem",
@@ -184,11 +185,62 @@ def lambda_handler(event, context):
                     "retryWrites": False,
                 }
 
-                client = pymongo.MongoClient(
-                    docdb_uri,
-                    serverSelectionTimeoutMS=5000,
-                    **(documentdb_options if docdb_tls else {})
-                )
+                # Try multiple connection strategies
+                connection_strategies = [
+                    # Strategy 1: Standard with replicaSet
+                    {
+                        "uri": docdb_uri,
+                        "options": documentdb_options,
+                        "name": "cluster_endpoint_with_replicaset"
+                    },
+                    # Strategy 2: Cluster endpoint without replicaSet
+                    {
+                        "uri": docdb_uri,
+                        "options": {**documentdb_options, "replicaSet": None},
+                        "name": "cluster_endpoint_no_replicaset"
+                    },
+                    # Strategy 3: Instance endpoint directly
+                    {
+                        "uri": f"mongodb://{docdb_username}:{docdb_password}@bdcs-g3-documentdb.c9ackrdwcwiz.us-east-1.docdb.amazonaws.com:27017",
+                        "options": {**documentdb_options, "replicaSet": None, "directConnection": True},
+                        "name": "instance_endpoint_direct"
+                    },
+                    # Strategy 4: Reader endpoint
+                    {
+                        "uri": f"mongodb://{docdb_username}:{docdb_password}@bdcs-g3-documentdb-cluster.cluster-ro-c9ackrdwcwiz.us-east-1.docdb.amazonaws.com:27017",
+                        "options": {**documentdb_options, "replicaSet": None, "readPreference": "secondaryPreferred"},
+                        "name": "reader_endpoint"
+                    },
+                ]
+
+                client = None
+                for strategy in connection_strategies:
+                    try:
+                        opts = strategy["options"].copy()
+                        # Remove None values
+                        opts = {k: v for k, v in opts.items() if v is not None}
+                        print(f"Trying {strategy['name']}...")
+                        client = pymongo.MongoClient(
+                            strategy["uri"],
+                            serverSelectionTimeoutMS=5000,
+                            **(opts if docdb_tls else {})
+                        )
+                        # Test the connection
+                        client.admin.command('ping')
+                        print(f"Successfully connected using {strategy['name']}")
+                        break
+                    except Exception as e:
+                        print(f"Failed {strategy['name']}: {e}")
+                        if client:
+                            client.close()
+                        client = None
+                        continue
+                
+                if client is None:
+                    raise Exception("All connection strategies failed")
+
+                db = client[os.environ.get("DOCDB_DATABASE", "ingestion")]
+                db[os.environ.get("DOCDB_COLLECTION", "reports_metadata")].insert_one(metadata_doc)
                 db = client[os.environ.get("DOCDB_DATABASE", "ingestion")]
                 db[os.environ.get("DOCDB_COLLECTION", "reports_metadata")].insert_one(metadata_doc)
                 print(f"Metadata inserted into DocumentDB for {anomaly_id}")

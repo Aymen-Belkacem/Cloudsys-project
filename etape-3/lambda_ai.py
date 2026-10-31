@@ -10,47 +10,47 @@ def lambda_handler(event, context):
     bedrock = boto3.client("bedrock-runtime", region_name=region)
     lambda_client = boto3.client("lambda", region_name=region)
 
-    prompt = f"""Tu es un expert senior en commerce international de matieres premieres agricoles chez DNEXT.
-Une anomalie a ete detectee sur un flux commercial bilaterale :
-- Produit : {event.get('hs_code')} ({event.get('product_name')})
-- Exportateur : {event.get('reporter')} | Importateur : {event.get('partner')}
-- Periode : {event.get('period')}
-- Prix unitaire FOB (Export) : {event.get('fob_unit_price')} USD/t
-- Prix unitaire CIF (Import) : {event.get('cif_unit_price')} USD/t
-- Ecart (Gap) : {event.get('gap_pct')}% (Regle declenchee : {event.get('anomaly_type')})
-- Contexte historique : {event.get('historical_context', 'N/A')}
+    prompt = f"""You are a senior expert in international agricultural commodity trading at DNEXT.
+An anomaly has been detected on a bilateral trade flow:
+- Product: {event.get('hs_code')} ({event.get('product_name')})
+- Exporter: {event.get('reporter')} | Importer: {event.get('partner')}
+- Period: {event.get('period')}
+- FOB Unit Price (Export): {event.get('fob_unit_price')} USD/t
+- CIF Unit Price (Import): {event.get('cif_unit_price')} USD/t
+- Gap: {event.get('gap_pct')}% (Rule triggered: {event.get('anomaly_type')})
+- Historical Context: {event.get('historical_context', 'N/A')}
 
-Redige un rapport structure et professionnel en francais expliquant cette anomalie.
+Write a structured, professional report in English explaining this anomaly.
 
-**INSTRUCTION CRITIQUE - ORDRE D'ANALYSE OBLIGATOIRE :**
-Tu DOIS analyser les causes dans l'ordre suivant, en t'arretant des qu'une cause explique suffisamment l'anomalie :
+**CRITICAL INSTRUCTION - MANDATORY ANALYSIS ORDER:**
+You MUST analyze causes in the following order, stopping as soon as a cause sufficiently explains the anomaly:
 
-### 1. CONTEXTE GEOPOLITIQUE ET MACROECONOMIQUE DE LA PERIODE (ANALYSER EN PREMIER)
-Identifie explicitement TOUS les evenements majeurs connus a la periode {event.get('period')} impactant :
-- Le produit **{event.get('product_name')}** (code HS {event.get('hs_code')})
-- La route commerciale **{event.get('reporter')} -> {event.get('partner')}**
-- Les regions de production/transit concernees (Mer Noire, Mediterranee, etc.)
+### 1. GEOPOLITICAL & MACROECONOMIC CONTEXT OF THE PERIOD (ANALYZE FIRST)
+Explicitly identify ALL major events known during {event.get('period')} impacting:
+- The product **{event.get('product_name')}** (HS code {event.get('hs_code')})
+- The trade route **{event.get('reporter')} -> {event.get('partner')}**
+- The production/transit regions concerned (Black Sea, Mediterranean, etc.)
 
-Cite nommement : conflits actifs, sanctions, blocus, accords internationaux (ex: Initiative Cereales Mer Noire), perturbations portuaires, embargos. Si un evenement majeur existe, **c'est la cause principale** -- quantifie son impact estime sur le gap (primes assurance, reroutage, tension offre/demande).
+Cite specifically: active conflicts, sanctions, blockades, international agreements (e.g., Black Sea Grain Initiative), port disruptions, embargoes. If a major event exists, **it is the primary cause** -- quantify its estimated impact on the gap (insurance premiums, rerouting, supply/demand tension).
 
-### 2. COUTS LOGISTIQUES EXCEPTIONNELS (CONSEQUENCE FREQUENTE DU #1)
-Si le #1 ne suffit pas : analyse fret maritime (indices Baltic), primes d'assurance "war risk", surcouts carburant, reroutage (ex: Cap Bonne-Esperance vs Suez/Mer Noire), goulets portuaires. Donne des fourchettes $/t concretes.
+### 2. EXCEPTIONAL LOGISTICS COSTS (FREQUENT CONSEQUENCE OF #1)
+If #1 is insufficient: analyze maritime freight (Baltic indices), "war risk" insurance premiums, fuel surcharges, rerouting (e.g., Cape of Good Hope vs Suez/Black Sea), port bottlenecks. Provide concrete $/t ranges.
 
-### 3. ERREURS DE DECLARATION DOUANIERE (DERNIER RECOURS)
-Uniquement si #1 et #2 n'expliquent pas l'ecart : erreurs quantites, valeurs, classification HS, manipulation intentionnelle (sous/sur-facturation). Precise pourquoi c'est peu probable au vu du contexte.
+### 3. CUSTOMS DECLARATION ERRORS (LAST RESORT)
+Only if #1 and #2 don't explain the gap: quantity/value errors, HS classification errors, intentional manipulation (under/over-invoicing). Explain why this is unlikely given the context.
 
 ---
 
-**FORMAT DE REPONSE ATTENDU :**
-1. **Diagnostic principal** (1 phrase : cause #1 identifiee + % gap explique)
-2. **Analyse detaillee** par priorite (#1 -> #2 -> #3) avec chiffres
-3. **Niveau de confiance** : ELEVE / MOYEN / FAIBLE
-4. **Actions recommandees** pour verification (ex: croiser avec prix spot, indices fret, primes assurance)
+**EXPECTED RESPONSE FORMAT:**
+1. **Main Diagnosis** (1 sentence: cause #1 identified + % gap explained)
+2. **Detailed Analysis** by priority (#1 -> #2 -> #3) with figures
+3. **Confidence Level**: HIGH / MEDIUM / LOW
+4. **Recommended Actions** for verification (e.g., cross-check with spot prices, freight indices, insurance premiums)
 
-**CONTRAINTE DE LONGUEUR :**
-Le rapport doit tenir sur 2-3 pages A4 maximum (environ 1500-2000 tokens).
-Sois concis : phrases courtes, tableaux compacts, pas de repetitions.
-Privilegiez la densite d'information : chiffres > adjectifs.
+**LENGTH CONSTRAINT:**
+The report must fit within 2-3 A4 pages maximum (approximately 1500-2000 tokens).
+Be concise: short sentences, compact tables, no repetitions.
+Prioritize information density: figures > adjectives.
 """
 
     print("Appel a Amazon Bedrock en cours...")
