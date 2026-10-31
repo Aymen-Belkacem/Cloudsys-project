@@ -16,6 +16,9 @@ RUN pip install -r requirements.txt
 # Application code (and its .streamlit/ config)
 COPY app/ .
 
+# CA bundle required by the TLS connection to DocumentDB
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/docdb-global-bundle.pem
+
 # Do not run as root inside the container
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser /app
 USER appuser

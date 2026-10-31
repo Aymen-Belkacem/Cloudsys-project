@@ -10,3 +10,6 @@ infra/
 README.md
 docker-compose.yml
 Dockerfile
+local/
+tests/
+pytest.ini
