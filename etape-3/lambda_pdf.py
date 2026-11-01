@@ -98,6 +98,7 @@ def lambda_handler(event, context):
     file_name = f"report_{anomaly_id}.pdf"
     local_path = f"/tmp/{file_name}"
     error_key = f"report_{anomaly_id}.error"
+    s3_key = file_name
 
     def write_error_to_s3(error_msg, traceback_str):
         """Write error details to S3 as .error file"""
@@ -120,13 +121,41 @@ def lambda_handler(event, context):
             except Exception as e:
                 print(f"Failed to write error file to S3: {e}")
 
+    def check_pdf_exists(s3_client, bucket, key):
+        """Check if PDF already exists in S3 using HEAD request (fast, no download)."""
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=s3_key)
+            return True
+        except Exception as e:
+            if hasattr(e, 'response') and e.response['Error']['Code'] == '404':
+                return False
+            raise
+
     try:
         anomaly = event.get("anomaly_data", {})
         explanation = event.get("ai_explanation", "No explanation provided.")
         anomaly_id = anomaly.get("anomaly_id", "unknown_id")
-
+        
         file_name = f"report_{anomaly_id}.pdf"
         local_path = f"/tmp/{file_name}"
+        error_key = f"report_{anomaly_id}.error"
+        s3_key = file_name
+
+        # Check if PDF already exists in S3 (deduplication)
+        s3_key = file_name
+        if not local_test:
+            s3_client = boto3.client("s3", region_name=region)
+            if check_pdf_exists(s3_client, bucket_name, s3_key):
+                print(f"PDF already exists for {anomaly_id}, returning existing presigned URL")
+                presigned_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket_name, "Key": file_name},
+                    ExpiresIn=3600
+                )
+                return {
+                    "statusCode": 200,
+                    "presigned_url": presigned_url
+                }
 
         markdown_to_pdf(explanation, local_path)
         print(f"PDF genere : {local_path}")
@@ -241,8 +270,6 @@ def lambda_handler(event, context):
 
                 db = client[os.environ.get("DOCDB_DATABASE", "ingestion")]
                 db[os.environ.get("DOCDB_COLLECTION", "reports_metadata")].insert_one(metadata_doc)
-                db = client[os.environ.get("DOCDB_DATABASE", "ingestion")]
-                db[os.environ.get("DOCDB_COLLECTION", "reports_metadata")].insert_one(metadata_doc)
                 print(f"Metadata inserted into DocumentDB for {anomaly_id}")
             except Exception as e:
                 print(f"Warning: Failed to insert metadata into DocumentDB: {e}")
@@ -262,6 +289,52 @@ def lambda_handler(event, context):
         print(traceback_str)
         write_error_to_s3(error_msg, traceback_str)
         raise
+
+if __name__ == "__main__":
+    os.environ["LOCAL_TEST"] = "true"
+    os.environ["AWS_REGION"] = "us-east-1"
+    
+    with open("mock_event.json", "r") as f:
+        anomaly = json.load(f)
+    
+    explanation_file = "mock_explanation.txt"
+    if os.path.exists(explanation_file):
+        with open(explanation_file, "r") as f:
+            explanation = f.read()
+    else:
+        explanation = "Explication de test - fichier mock_explanation.txt manquant."
+    
+    test_event = {
+        "anomaly_data": anomaly,
+        "ai_explanation": explanation
+    }
+    lambda_handler(test_event, None)
+
+
+
+
+if __name__ == "__main__":
+    os.environ["LOCAL_TEST"] = "true"
+    os.environ["AWS_REGION"] = "us-east-1"
+    
+    with open("mock_event.json", "r") as f:
+        anomaly = json.load(f)
+    
+    explanation_file = "mock_explanation.txt"
+    if os.path.exists(explanation_file):
+        with open(explanation_file, "r") as f:
+            explanation = f.read()
+    else:
+        explanation = "Explication de test - fichier mock_explanation.txt manquant."
+    
+    test_event = {
+        "anomaly_data": anomaly,
+        "ai_explanation": explanation
+    }
+    lambda_handler(test_event, None)
+
+
+
 
 if __name__ == "__main__":
     os.environ["LOCAL_TEST"] = "true"
