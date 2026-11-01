@@ -9,5 +9,5 @@
   "cif_unit_price": 600.0,
   "gap_pct": 50.0,
   "anomaly_type": "Gap > 35%",
-  "historical_context": "Moyenne historique du Gap sur cette route : 12%."
+  "historical_context": "Historical average gap on this route: 12%."
 }

@@ -53,14 +53,14 @@ Be concise: short sentences, compact tables, no repetitions.
 Prioritize information density: figures > adjectives.
 """
 
-    print("Appel a Amazon Bedrock en cours...")
+    print("Calling Amazon Bedrock...")
     response = bedrock.converse(
         modelId=model_id,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={"maxTokens": 3000, "temperature": 0.3}
     )
     explanation = response["output"]["message"]["content"][0]["text"]
-    print("Explication generee avec succes !")
+    print("Explanation generated successfully!")
 
     payload_for_pdf = {
         "anomaly_data": event,
@@ -77,9 +77,9 @@ Prioritize information density: figures > adjectives.
             InvocationType="Event",
             Payload=payload_json
         )
-        print(f"Lambda {pdf_lambda_name} declenchee de maniere asynchrone.")
+        print(f"Lambda {pdf_lambda_name} triggered asynchronously.")
     else:
-        print("\n--- MODE TEST LOCAL : Resultat du LLM ---")
+        print("\n--- LOCAL TEST MODE: LLM Result ---")
         print(explanation)
 
     return {

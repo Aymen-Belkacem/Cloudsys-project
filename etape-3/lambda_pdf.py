@@ -158,13 +158,13 @@ def lambda_handler(event, context):
         #         }
 
         markdown_to_pdf(explanation, local_path)
-        print(f"PDF genere : {local_path}")
+        print(f"PDF generated: {local_path}")
 
         presigned_url = ""
         if not local_test:
             s3_client = boto3.client("s3", region_name=region)
             s3_client.upload_file(local_path, bucket_name, file_name)
-            print(f"PDF uploade sur S3 : s3://{bucket_name}/{file_name}")
+            print(f"PDF uploaded to S3: s3://{bucket_name}/{file_name}")
 
             presigned_url = s3_client.generate_presigned_url(
                 "get_object",
@@ -173,7 +173,7 @@ def lambda_handler(event, context):
             )
         else:
             presigned_url = f"file://{local_path}"
-            print(f"Mode local - PDF dispo ici : {local_path}")
+            print(f"Local mode - PDF available here: {local_path}")
 
         # Insert metadata into DocumentDB
         metadata_doc = {
@@ -275,7 +275,7 @@ def lambda_handler(event, context):
                 print(f"Warning: Failed to insert metadata into DocumentDB: {e}")
                 # Don't fail the Lambda if DocDB insert fails
 
-        print("Metadonnees pour DocumentDB :", json_dumps(metadata_doc, ensure_ascii=False))
+        print("Metadata for DocumentDB:", json_dumps(metadata_doc, ensure_ascii=False))
 
         return {
             "statusCode": 200,
@@ -302,7 +302,7 @@ if __name__ == "__main__":
         with open(explanation_file, "r") as f:
             explanation = f.read()
     else:
-        explanation = "Explication de test - fichier mock_explanation.txt manquant."
+        explanation = "Test explanation - mock_explanation.txt file missing."
     
     test_event = {
         "anomaly_data": anomaly,
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         with open(explanation_file, "r") as f:
             explanation = f.read()
     else:
-        explanation = "Explication de test - fichier mock_explanation.txt manquant."
+        explanation = "Test explanation - mock_explanation.txt file missing."
     
     test_event = {
         "anomaly_data": anomaly,
@@ -348,7 +348,7 @@ if __name__ == "__main__":
         with open(explanation_file, "r") as f:
             explanation = f.read()
     else:
-        explanation = "Explication de test - fichier mock_explanation.txt manquant."
+        explanation = "Test explanation - mock_explanation.txt file missing."
     
     test_event = {
         "anomaly_data": anomaly,

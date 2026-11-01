@@ -1,12 +1,12 @@
-# Creator: [Votre Nom]
-# Script pour la création des rôles IAM (Projet 3 - Anomalies)
+# Creator: [Your Name]
+# Script for creating IAM roles (Project 3 - Anomalies)
 
 import boto3
 import botocore
 import json
 import argparse
 
-# 1. Politique de confiance de base (Trust Policy) pour autoriser AWS Lambda à assumer le rôle
+# 1. Base trust policy (Trust Policy) to authorize AWS Lambda to assume the role
 LAMBDA_TRUST_POLICY = json.dumps({
     "Version": "2012-10-17",
     "Statement": [{
@@ -17,26 +17,26 @@ LAMBDA_TRUST_POLICY = json.dumps({
 })
 
 def create_lambda_ai_role(iam_client):
-    """ Création du rôle pour l'orchestrateur IA """
+    """ Creation of the role for the AI orchestrator """
     # role_name = "Role_Lambda_AI"
     role_name = "bdcs-g3-lambda-ai-role"
-    print(f"Création du rôle: {role_name}...")
+    print(f"Creating role: {role_name}...")
     
     try:
-        # Création du rôle
+        # Creating the role
         response = iam_client.create_role(
             RoleName=role_name,
             AssumeRolePolicyDocument=LAMBDA_TRUST_POLICY,
-            Description="Role pour Lambda_AI (Bedrock et Invocation asynchrone)"
+            Description="Role for Lambda_AI (Bedrock and Async Invocation)"
         )
         
-        # Attachement de la politique de base pour les logs (CloudWatch)
+        # Attaching base policy for logs (CloudWatch)
         iam_client.attach_role_policy(
             RoleName=role_name,
             PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
         )
         
-        # Ajout des permissions spécifiques en ligne (Bedrock + appel Lambda)
+        # Adding specific inline permissions (Bedrock + Lambda call)
         ai_inline_policy = {
             "Version": "2012-10-17",
             "Statement": [{
@@ -53,29 +53,29 @@ def create_lambda_ai_role(iam_client):
             PolicyName="BedrockAndLambdaInvokePolicy",
             PolicyDocument=json.dumps(ai_inline_policy)
         )
-        print(f"Rôle '{role_name}' créé avec succès. ARN: {response['Role']['Arn']}\n")
+        print(f"Role '{role_name}' created successfully. ARN: {response['Role']['Arn']}\n")
         
     except botocore.exceptions.ClientError as error:
         if error.response['Error']['Code'] == 'EntityAlreadyExists':
-            print(f"Le rôle '{role_name}' existe déjà.\n")
+            print(f"Role '{role_name}' already exists.\n")
         else:
             raise
 
 def create_lambda_pdf_role(iam_client, bucket_name):
-    """ Création du rôle pour la génération PDF et sauvegarde S3/DocumentDB """
+    """ Creation of the role for PDF generation and S3/DocumentDB storage """
     # role_name = "Role_Lambda_PDF"
     role_name = "bdcs-g3-lambda-pdf-role"
-    print(f"Création du rôle: {role_name}...")
+    print(f"Creating role: {role_name}...")
     
     try:
-        # Création du rôle
+        # Creating the role
         response = iam_client.create_role(
             RoleName=role_name,
             AssumeRolePolicyDocument=LAMBDA_TRUST_POLICY,
-            Description="Role pour Lambda_PDF (Acces VPC DocumentDB et ecriture S3)"
+            Description="Role for Lambda_PDF (VPC DocumentDB access and S3 write)"
         )
         
-        # Attachement des politiques managées (Logs + Accès réseau/VPC pour DocumentDB)
+        # Attaching managed policies (Logs + VPC/Network access for DocumentDB)
         iam_client.attach_role_policy(
             RoleName=role_name,
             PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -85,7 +85,7 @@ def create_lambda_pdf_role(iam_client, bucket_name):
             PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
         )
         
-        # Ajout de la permission spécifique en ligne (Écriture stricte dans le bucket S3)
+        # Adding specific inline permission (Strict write to S3 bucket)
         pdf_inline_policy = {
             "Version": "2012-10-17",
             "Statement": [{
@@ -99,11 +99,11 @@ def create_lambda_pdf_role(iam_client, bucket_name):
             PolicyName="S3WriteReportsPolicy",
             PolicyDocument=json.dumps(pdf_inline_policy)
         )
-        print(f"Rôle '{role_name}' créé avec succès. ARN: {response['Role']['Arn']}\n")
+        print(f"Role '{role_name}' created successfully. ARN: {response['Role']['Arn']}\n")
         
     except botocore.exceptions.ClientError as error:
         if error.response['Error']['Code'] == 'EntityAlreadyExists':
-            print(f"Le rôle '{role_name}' existe déjà.\n")
+            print(f"Role '{role_name}' already exists.\n")
         else:
             raise
 
@@ -115,9 +115,9 @@ def main(bucket_name):
     create_lambda_pdf_role(iam_client, bucket_name)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Créer les rôles IAM pour le pipeline de détection d'anomalies")
-    # Le nom du bucket est requis pour sécuriser l'accès S3 du rôle PDF
-    parser.add_argument("--bucket_name", required=True, help="Le nom du bucket S3 (ex: reports-pdf)")
+    parser = argparse.ArgumentParser(description="Create IAM roles for anomaly detection pipeline")
+    # The bucket name is required to secure S3 access for the PDF role
+    parser.add_argument("--bucket_name", required=True, help="S3 bucket name (ex: reports-pdf)")
     args = parser.parse_args()
     
     main(args.bucket_name)
