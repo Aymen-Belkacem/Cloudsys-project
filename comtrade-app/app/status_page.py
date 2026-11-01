@@ -67,6 +67,11 @@ def _read_database() -> dict:
         database = client[DOCDB_DATABASE]
         return {
             "state": "Connected",
+            "all_collections": [
+                (name, collection, client[name][collection].estimated_document_count())
+                for name in client.list_database_names()
+                for collection in client[name].list_collection_names()
+            ],
             "counts": {
                 name: database[name].estimated_document_count()
                 for name in database.list_collection_names()
@@ -125,6 +130,10 @@ if "counts" in db_report:
             "Documents (estimated)": list(db_report["counts"].values()),
         }
     )
+    databases, collections, counts = zip(*db_report["all_collections"])
+    st.write("All databases:")
+    st.table({"Database": databases, "Collection": collections, "Documents (estimated)": counts})
+
     sample = db_report["sample"]
     if sample is None:
         st.info(f"The `{DOCDB_COLLECTION}` collection is empty.")

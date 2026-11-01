@@ -12,11 +12,13 @@ from matrix import (
     GAP_TOO_HIGH,
     MONTHLY,
     NO_DATA,
+    ONE_SIDED,
     QUARTERLY,
     YEARLY,
     build_anomaly_event,
     build_matrix,
     compute_cells,
+    declared_cells,
     is_flagged,
     list_periods,
     match_mirrors,
@@ -152,15 +154,39 @@ def test_period_labels(frequency, expected):
     assert period_labels(months, frequency).tolist() == expected
 
 
-def test_top_partners_ranked_by_exported_value():
+def test_top_partners_ranked_by_value():
     rows = rows_of(
         export_row("2023-01", "EGY", 100, 1.0),
         export_row("2023-02", "EGY", 100, 1.0),
         export_row("2023-01", "MAR", 150, 1.0),
         export_row("2023-01", "DZA", 50, 1.0),
-        import_row("2023-01", "ESP", 9000, 1.0),  # imports do not count
     )
     assert top_partners(rows, "FRA", n=2) == ["EGY", "MAR"]
+
+
+def test_top_partners_count_a_shipment_once():
+    rows = rows_of(
+        export_row("2023-01", "EGY", 100, 1.0),
+        import_row("2023-01", "EGY", 110, 1.0),  # same shipment, must not be added
+        export_row("2023-01", "MAR", 150, 1.0),
+    )
+    assert top_partners(rows, "FRA") == ["MAR", "EGY"]
+
+
+def test_top_partners_keep_partners_known_by_their_imports_only():
+    rows = rows_of(
+        export_row("2021-12", "EGY", 100, 1.0),
+        import_row("2022-01", "TUR", 500, 1.0),  # the exporter stopped reporting
+    )
+    assert top_partners(rows, "FRA") == ["TUR", "EGY"]
+
+
+def test_top_partners_ignore_other_exporters():
+    rows = rows_of(
+        export_row("2023-01", "EGY", 100, 1.0, reporter="USA"),
+        import_row("2023-01", "MAR", 100, 1.0, partner="USA"),
+    )
+    assert top_partners(rows, "FRA") == []
 
 
 def test_top_partners_skip_excluded_codes():
@@ -176,6 +202,12 @@ def test_null_quantities_are_dropped():
     assert match_mirrors(rows, "FRA").empty
 
 
+def matrix_of(rows, partners, frequency=YEARLY):
+    cells = compute_cells(match_mirrors(rows, "FRA"), frequency)
+    declared = declared_cells(rows, "FRA", frequency)
+    return build_matrix(cells, partners, list_periods(rows, frequency), declared)
+
+
 def test_matrix_has_every_partner_and_period():
     rows = rows_of(
         export_row("2023-01", "EGY", 400, 1.0),
@@ -183,12 +215,55 @@ def test_matrix_has_every_partner_and_period():
         export_row("2024-01", "MAR", 400, 1.0),
         import_row("2024-01", "MAR", 440, 1.0),
     )
-    cells = compute_cells(match_mirrors(rows, "FRA"), YEARLY)
-    matrix = build_matrix(cells, ["EGY", "MAR", "ESP"], list_periods(rows, YEARLY))
+    matrix = matrix_of(rows, ["EGY", "MAR", "ESP"])
     assert matrix.loc["EGY", "2023"] == FLAGGED
     assert matrix.loc["EGY", "2024"] == NO_DATA
     assert matrix.loc["MAR", "2024"] == CONSISTENT
     assert (matrix.loc["ESP"] == NO_DATA).all()
+
+
+def test_flow_declared_by_one_side_is_one_sided():
+    rows = rows_of(
+        export_row("2023-01", "EGY", 400, 1.0),  # the importer reports nothing
+        import_row("2024-01", "EGY", 440, 1.0),  # the exporter reports nothing
+        export_row("2025-01", "EGY", 400, 1.0),
+        import_row("2025-01", "EGY", 440, 1.0),
+    )
+    matrix = matrix_of(rows, ["EGY"])
+    assert matrix.loc["EGY"].tolist() == [ONE_SIDED, ONE_SIDED, CONSISTENT]
+
+
+def test_one_sided_month_does_not_change_a_computed_period():
+    rows = rows_of(
+        export_row("2023-01", "EGY", 400, 1.0),
+        import_row("2023-01", "EGY", 600, 1.0),
+        export_row("2023-02", "EGY", 9000, 1.0),  # no mirror: stays out of the prices
+    )
+    assert matrix_of(rows, ["EGY"]).loc["EGY", "2023"] == FLAGGED
+
+
+def test_declared_row_with_unusable_quantity_is_still_declared():
+    rows = rows_of(export_row("2023-01", "EGY", 400, 0.0))
+    assert matrix_of(rows, ["EGY"]).loc["EGY", "2023"] == ONE_SIDED
+
+
+def test_exporter_without_any_mirror_gives_a_one_sided_matrix():
+    rows = rows_of(import_row("2023-01", "TUR", 440, 1.0), import_row("2023-02", "EGY", 440, 1.0))
+    assert (matrix_of(rows, ["TUR", "EGY"], QUARTERLY) == ONE_SIDED).all(axis=None)
+
+
+@pytest.mark.parametrize(
+    "frequency, expected",
+    [
+        (YEARLY, {("EGY", "2023")}),
+        (QUARTERLY, {("EGY", "2023-Q1"), ("EGY", "2023-Q2")}),
+        (MONTHLY, {("EGY", "2023-02"), ("EGY", "2023-04")}),
+    ],
+)
+def test_declared_cells(frequency, expected):
+    rows = rows_of(export_row("2023-02", "EGY", 400, 1.0), import_row("2023-04", "EGY", 440, 1.0))
+    declared = declared_cells(rows, "FRA", frequency)
+    assert set(zip(declared["Importer"], declared["Period"])) == expected
 
 
 def test_route_gap_uses_every_month_of_the_route():

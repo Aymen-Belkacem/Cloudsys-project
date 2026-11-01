@@ -4,10 +4,11 @@ The app connects to Amazon DocumentDB and has two pages:
 
 - **Trade anomalies**: pick an exporter, a product and a frequency (yearly,
   quarterly or monthly), then read the heatmap of its top 10 partner countries.
-  White = consistent, red = flagged, grey = no mirror data. A red cell shows the
-  FOB, CIF and gap, and generates or displays the AI report (PDF).
+  White = consistent, or reported by one side only. Red = flagged. Grey = no trade
+  reported. A red cell shows the FOB, CIF and gap, and generates or displays the
+  AI report (PDF).
 - **Status report**: version, environment, ECS task, database connection,
-  collections and a sample document. Useful for debugging.
+  all databases and collections, and a sample document. Useful for debugging.
 
 The app URL is public, so errors show a generic message on AWS: the details are in
 the logs. Only `APP_ENV=local` shows them in the page, with the container hostname.
@@ -24,14 +25,15 @@ comtrade-app/
 │   ├── status_page.py         # status report
 │   ├── db.py                  # DocumentDB client and queries
 │   ├── errors.py              # error display, details hidden outside local runs
-│   ├── reports.py             # AI Lambda call, PDF reports from S3
+│   ├── reports.py             # AI Lambda call, PDF and error files from S3
+│   ├── report_view.py         # report section of an anomaly
 │   ├── requirements.txt
 │   └── .streamlit/config.toml # port 8501, listens on 0.0.0.0
 ├── Dockerfile                 # image pushed to ECR
 ├── .dockerignore
 ├── docker-compose.yml         # local development only (app + MongoDB)
 ├── local/seed.py              # loads data/Bilateral_data.csv into the local MongoDB
-├── tests/                     # unit tests (anomaly computation, report job, errors)
+├── tests/                     # unit tests (anomaly computation, report job, page, errors)
 ├── pytest.ini
 └── infra/
     ├── config.env             # resource names, region, CPU/memory, network, DocumentDB
@@ -69,6 +71,15 @@ mounts `~/.aws` read-only and uses the user's credentials.
    `bdcs-g3-lambda-pdf`, which stores `report_<anomaly_id>.pdf` in
    `bdcs-g3-reports-pdf`.
 3. The page checks S3 every 5 seconds, then shows the PDF with a download button.
+
+If the PDF Lambda fails, it writes `report_<anomaly_id>.error` (JSON) to the same
+bucket. The page then stops waiting at once and offers a "Retry" button. On AWS it
+shows a generic message: the cause is in the logs, and in the page on a local run.
+
+- The PDF always wins: a `.error` stays in the bucket next to a later valid report.
+- A `.error` older than the request belongs to a previous attempt and is ignored.
+- AWS retries a failed Lambda up to twice, so a report can still appear after an error.
+- The AI Lambda writes no `.error`: its failures end with the 3-minute timeout.
 
 The id is `<exporter>_<importer>_<HS4>_<period>`. A report already in the bucket
 is reused without a new call. To regenerate it, delete the file.

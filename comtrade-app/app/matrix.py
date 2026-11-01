@@ -18,6 +18,7 @@ FREQUENCIES = (YEARLY, QUARTERLY, MONTHLY)
 
 CONSISTENT = "consistent"
 FLAGGED = "flagged"
+ONE_SIDED = "one-sided"  # legitimate according to the data description
 NO_DATA = "no data"
 
 FOB_ABOVE_CIF = "FOB > CIF"
@@ -58,14 +59,40 @@ def list_periods(rows: pd.DataFrame, frequency: str) -> list[str]:
     return sorted(period_labels(rows["YearMonth"], frequency).unique())
 
 
+def _exporter_flows(rows: pd.DataFrame, exporter: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return both sides of the exporter's flows, each with an Importer column."""
+    exports = rows[(rows["Flow"] == "Export") & (rows["Reporter"] == exporter)]
+    imports = rows[(rows["Flow"] == "Import") & (rows["Partner"] == exporter)]
+    return exports.assign(Importer=exports["Partner"]), imports.assign(Importer=imports["Reporter"])
+
+
 def top_partners(
     rows: pd.DataFrame, exporter: str, n: int = 10, excluded: Iterable[str] = ()
 ) -> list[str]:
-    """Importers ranked by value exported, over all periods."""
-    exports = rows[(rows["Flow"] == "Export") & (rows["Reporter"] == exporter)]
-    exports = exports[~exports["Partner"].isin(excluded)]
-    totals = exports.groupby("Partner")["Value_USD"].sum()
+    """Importers ranked by value traded, over all periods.
+
+    A shipment can appear on both sides, which must never be added: each month
+    takes the exporter's value, else the importer's. So a country that stopped
+    reporting its exports, like Russia, keeps its partners.
+    """
+    exports, imports = _exporter_flows(rows, exporter)
+    keys = ["YearMonth", "Importer"]
+    export_values = exports.groupby(keys)["Value_USD"].sum()
+    import_values = imports.groupby(keys)["Value_USD"].sum()
+    totals = export_values.combine_first(import_values).groupby(level="Importer").sum()
+    totals = totals[~totals.index.isin(excluded)]
     return totals.sort_values(ascending=False).head(n).index.tolist()
+
+
+def declared_cells(rows: pd.DataFrame, exporter: str, frequency: str) -> pd.DataFrame:
+    """Importer and period pairs declared by at least one side."""
+    declared = pd.concat(_exporter_flows(rows, exporter))
+    return pd.DataFrame(
+        {
+            "Importer": declared["Importer"],
+            "Period": period_labels(declared["YearMonth"], frequency),
+        }
+    ).drop_duplicates()
 
 
 def compute_cells(matched: pd.DataFrame, frequency: str) -> pd.DataFrame:
@@ -129,10 +156,18 @@ def build_anomaly_event(
     }
 
 
-def build_matrix(cells: pd.DataFrame, partners: list[str], periods: list[str]) -> pd.DataFrame:
-    """Status table with partners as rows and periods as columns."""
-    return (
-        cells.pivot(index="Importer", columns="Period", values="Status")
-        .reindex(index=partners, columns=periods)
-        .fillna(NO_DATA)
+def build_matrix(
+    cells: pd.DataFrame, partners: list[str], periods: list[str], declared: pd.DataFrame
+) -> pd.DataFrame:
+    """Status table with partners as rows and periods as columns.
+
+    A flow declared by one side only is not missing data: the data description
+    calls it a legitimate transaction. Without a mirror, it cannot be flagged.
+    """
+    computed, one_sided = (
+        table.pivot(index="Importer", columns="Period", values="Status").reindex(
+            index=partners, columns=periods
+        )
+        for table in (cells, declared.assign(Status=ONE_SIDED))
     )
+    return computed.astype(object).where(computed.notna(), one_sided).fillna(NO_DATA)
