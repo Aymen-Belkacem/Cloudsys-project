@@ -1,330 +1,330 @@
-# Comtrade Anomaly Detection - Step 3: AI Generation & PDF Storage
+# Etape 3 — Lambda PDF Generator with S3 Deduplication
 
-## 🎯 Overview
+## 1. Overview
 
-This module implements **Step 3** of the Comtrade Anomaly Detection pipeline: **AI-powered anomaly analysis report generation and PDF storage**.
+The `etape-3` directory contains the **Lambda PDF Generator** component of the CloudSys project. This AWS Lambda function:
 
-### Pipeline Context
-```
-Step 1: Data Ingestion & FOB/CIF Calculation (Luca)
-    ↓ Anomaly detected → S3 trigger
-Step 2: Streamlit UI (Aymen) ──→ User clicks "Analyze"
-    ↓ Invoke
-Step 3: AI Generation & PDF Storage (THIS MODULE)
-    ├── Lambda AI: Bedrock LLM generates structured anomaly report
-    ├── Lambda PDF: Weasyprint renders Markdown → PDF
-    ├── S3: PDF storage (bdcs-g3-reports-pdf)
-    └── DocumentDB: Metadata persistence (reports_metadata)
-```
+- **Generates PDF reports** from AI explanations using WeasyPrint (HTML/CSS → PDF)
+- **Uploads PDFs to S3** (`bdcs-g3-reports-pdf` bucket) with presigned URLs
+- **Stores metadata in DocumentDB** (`reports_metadata` collection)
+- **Verifies PDF existence via S3 HEAD request** (deduplication — temporarily disabled due to IAM propagation)
+- **Handles errors gracefully** with `.error` files written to S3
+
+**Pipeline**: `Lambda AI` → `Lambda PDF` → `S3` → `DocumentDB` → Streamlit app displays presigned URL
 
 ---
 
-## 🏗️ Architecture & Technology Choices (30% of grade)
-
-### Infrastructure & Compute
-
-| Component | Technology | Justification |
-|-----------|------------|---------------|
-| **Lambda AI** | AWS Lambda (Python 3.11, Zip) | Serverless, auto-scaling, pay-per-invocation, low latency for LLM inference |
-| **Lambda PDF** | AWS Lambda (Container Image, Python 3.11) | Weasyprint requires system libs (cairo, pango); Container provides OS-level deps |
-| **DocumentDB** | Amazon DocumentDB (MongoDB-compatible) | Managed, MongoDB API compatible, TLS encryption, VPC-native |
-| **S3** | Amazon S3 | Durable, scalable, presigned URLs for secure PDF download |
-| **Bedrock** | Amazon Bedrock (Claude Haiku 4.5) | Managed LLM, no infrastructure, pay-per-token, enterprise-grade |
-
-### Database & Storage
-
-| Component | Choice | Justification |
-|-----------|--------|---------------|
-| **Metadata DB** | DocumentDB (MongoDB API) | JSON-native, flexible schema for anomaly metadata, TLS encryption, VPC-native |
-| **Report Storage** | S3 | Cost-effective, durable, presigned URLs for secure time-limited access |
-| **Certificate Management** | AWS TLS CA bundle | Downloaded at build time to `/opt/python/global-bundle.pem` |
-
-### LLM & AI
-
-| Aspect | Choice | Justification |
-|--------|--------|---------------|
-| **LLM Model** | Anthropic Claude Haiku 4.5 (Bedrock) | Fast, cost-effective, strong structured reasoning, multilingual |
-| **Prompt Engineering** | Structured, mandatory analysis order | Ensures consistent, auditable analysis (Geopolitical → Logistics → Customs) |
-| **Output Format** | Markdown → PDF (Weasyprint) | Professional rendering, tables, Unicode support |
-
-### Infrastructure & Security
-
-| Aspect | Choice | Justification |
-|--------|--------|---------------|
-| **Network** | VPC (vpc-07f1d9fb1fef102bf), private subnets us-east-1a/1b | DocumentDB requires VPC; Lambda in same VPC for private access |
-| **Security Groups** | `bdcs-g3-lambda-sg` → `bdcs-g3-data-access` (port 27017) | Least-privilege: only Lambda SG can reach DocDB on 27017 |
-| **IAM Roles** | Least-privilege per Lambda | `bdcs-g3-lambda-ai-role`: Bedrock + Lambda invoke; `bdcs-g3-lambda-pdf-role`: S3 + DocDB |
-| **Secrets** | Env vars (DOCDB_PASSWORD) | Simple for MVP; can migrate to Secrets Manager |
-
-### Naming Convention
-All resources follow `bdcs-g3-*` prefix:
-- `bdcs-g3-lambda-ai`, `bdcs-g3-lambda-pdf`, `bdcs-g3-pdf`, `bdcs-g3-reports-pdf`, `bdcs-g3-pymongo-layer`, `bdcs-g3-lambda-sg`
-
----
-
-## 🔧 Pipeline Implementation (30%)
-
-### Lambda AI (`bdcs-g3-lambda-ai`)
-- **Runtime**: Python 3.11 (Zip)
-- **Trigger**: Synchronous invocation from Streamlit UI
-- **Process**:
-  1. Receives anomaly event (anomaly_id, prices, gap%, context)
-  2. Constructs structured prompt with mandatory analysis order
-  3. Calls Bedrock (Claude Haiku 4.5) with maxTokens=3000, temperature=0.3
-  4. Returns 202 with anomaly_id; async invokes Lambda PDF
-- **Response**: `{"statusCode": 202, "body": {"status": "Processing", "anomaly_id": "..."}}`
-
-### Lambda PDF (`bdcs-g3-lambda-pdf`)
-- **Runtime**: Python 3.11 (Container Image, ECR)
-- **Trigger**: Async invocation from Lambda AI
-- **Process**:
-  1. Receives `anomaly_data` + `ai_explanation` (Markdown)
-  2. Converts Markdown → HTML → PDF (Weasyprint 52, custom CSS)
-  3. Uploads PDF to S3 (`bdcs-g3-reports-pdf/report_{anomaly_id}.pdf`)
-  5. Generates presigned URL (1h expiry)
-  6. Inserts metadata into DocumentDB (`reports_metadata`)
-  7. Returns presigned URL to caller (via async callback)
-- **Error Handling**: On failure, writes `report_{anomaly_id}.error` to S3 with traceback
-
-### DocumentDB Schema (`reports_metadata`)
-```json
-{
-  "anomaly_id": "FRA_EGY_1001_2023-05",
-  "s3_key": "report_FRA_EGY_1001_2023-05.pdf",
-  "bucket": "bdcs-g3-reports-pdf",
-  "presigned_url": "https://...",
-  "status": "COMPLETED",
-  "created_at": "2026-10-31T20:48:09.108Z",
-  "anomaly_data": { ... },
-  "ai_explanation": "# Anomaly Report...\n## 1. GEOPOLITICAL..."
-}
-```
-
----
-
-## 📋 Requirements & Documentation (15%)
-
-### Functional Requirements
-| ID | Requirement | Status |
-|----|-------------|--------|
-| REQ-3.1 | Generate structured anomaly report via LLM | ✅ |
-| REQ-3.2 | Convert Markdown → PDF with professional rendering | ✅ |
-| REQ-3.3 | Store PDF in S3 with presigned URL access | ✅ |
-| REQ-3.4 | Persist report metadata in DocumentDB | ✅ |
-| REQ-3.5 | Error handling with S3 `.error` files | ✅ |
-| REQ-3.6 | English report generation | ✅ |
-| REQ-3.7 | Async processing (202 response) | ✅ |
-
-### Non-Functional
-| NFR | Target | Achieved |
-|-----|--------|----------|
-| Latency (Lambda AI) | < 30s | ~19s |
-| Latency (Lambda PDF) | < 10s | ~6s |
-| Availability | 99.9% | Serverless |
-| Report Language | English | ✅ |
-| PDF Quality | Professional (tables, Unicode) | ✅ Weasyprint 52 |
-
----
-
-## 📊 Dashboard & AI Reports (15%)
-
-### AI Report Structure (English)
-1. **Main Diagnosis** - One sentence: primary cause + % gap explained
-2. **Detailed Analysis** (Priority order):
-   - 1. Geopolitical & Macroeconomic Context
-   - 2. Exceptional Logistics Costs
-   - 3. Customs Declaration Errors (ruled out)
-3. **Confidence Level**: HIGH / MEDIUM / LOW
-4. **Recommended Actions** for verification
-
-### Report Features
-- **Language**: English (professional trade terminology)
-- **Format**: Markdown → PDF (tables, bold, italic, Unicode)
-- **Tables**: Border-collapse, zebra striping, header styling
-- **Length**: 2-3 A4 pages (~1500-2000 tokens)
-
----
-
-## 🧪 Tests (10%)
-
-### Test Structure
-```
-etape-3/
-├── tests/
-│   ├── __init__.py
-│   ├── test_lambda_ai.py
-│   ├── test_lambda_pdf.py
-│   ├── test_docdb_integration.py
-│   └── fixtures/
-│       ├── mock_event.json
-│       └── mock_explanation.md
-├── test_requirements.txt
-└── pytest.ini
-```
-
----
-
-## 📁 Project Structure
+## 2. Architecture
 
 ```
-Cloudsys-project/
-├── etape-3/
-│   ├── lambda_ai.py           # Lambda AI (Zip)
-│   ├── lambda_pdf.py          # Lambda PDF (Container)
-│   ├── Dockerfile.lambda_pdf  # Container build
-│   ├── requirements.txt       # boto3, markdown2, weasyprint==52.0, pymongo==4.8.0
-│   ├── Dockerfile.lambda_pdf  # Container build
-│   ├── fonts/                 # DejaVu Sans fonts
-│   ├── mock_event.json        # Test event
-│   ├── mock_explanation.md    # Sample LLM output
-│   ├── build_zip.sh           # Build script
-│   ├── lambda_pdf.zip         # Deployed container (cached)
-│   └── tests/
-│       ├── __init__.py
-│       ├── test_lambda_ai.py
-│       ├── test_lambda_pdf.py
-│       ├── test_docdb_integration.py
-│       └── fixtures/
-├── comtrade-app/              # Step 2 (Aymen)
-└── etape-1/                   # Step 1 (Luca)
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Lambda AI  │────▶│   Lambda PDF     │────▶│     S3          │
+│   (async)   │     │   (Docker image) │     │  (reports-pdf)  │
+└─────────────┘     └──────────────────┘     └─────┬───────────┘
+                                                   │
+                              ┌────────────────────┘
+                              ▼
+                    ┌─────────────────┐
+                    │   DocumentDB    │
+                    │reports_metadata │
+                    └─────────────────┘
 ```
+
+**Flow**:
+1. Lambda AI generates an AI explanation for a trade anomaly
+2. Lambda AI invokes Lambda PDF asynchronously with the anomaly data + explanation
+3. Lambda PDF renders HTML/CSS → PDF via WeasyPrint
+4. PDF uploaded to S3, presigned URL generated (expires in 1 hour)
+5. Metadata (anomaly_id, s3_key, presigned_url, status, etc.) inserted into DocumentDB
+6. Streamlit app polls S3 for the PDF and displays it to the user
 
 ---
 
-## 🚀 Deployment
+## 3. File Structure
 
-### Prerequisites
-- AWS CLI configured (`aws configure`)
-- Docker installed
-- ECR repo: `bdcs-g3-lambda-pdf`
-- DocumentDB cluster: `bdcs-g3-documentdb-cluster`
+| Path | Description |
+|------|-------------|
+| `lambda_pdf.py` | **Main Lambda handler** — PDF generation, S3 upload, DocDB insert, deduplication check |
+| `lambda_ai.py` | Lambda AI handler — anomaly analysis, generates English explanation |
+| `Dockerfile.lambda_pdf` | Docker build for Lambda PDF (Python 3.11, WeasyPrint, PyMongo, fonts, certs) |
+| `requirements.txt` | Production dependencies (pymongo, weasyprint, markdown2, boto3) |
+| `test_requirements.txt` | Test dependencies (pytest, moto, etc.) |
+| `pytest.ini` | Pytest configuration |
+| `README.md` | This file |
+| `iam_roles.py` | Utility script for IAM role/policy management |
+| `mock_event.json` | Mock event for local testing |
+| `mock_explanation.txt` | Mock AI explanation for local testing |
+| `fonts/` | DejaVu Sans fonts (DejaVuSans.ttf, DejaVuSans-Bold.ttf, DejaVuSansMono.ttf) |
+| `certs/` | DocumentDB TLS certificates (global-bundle.pem) |
+| `tests/` | Test suite (18 passed, 3 skipped) |
+| `tests/test_lambda_pdf.py` | Tests for PDF Lambda |
+| `tests/test_lambda_ai.py` | Tests for AI Lambda |
+| `tests/test_docdb_integration.py` | Tests for DocumentDB connection |
+| `tests/fixtures/` | Test fixtures (mock_event.json, mock_explanation.md) |
+| `build_zip.sh` | Legacy zip build script (deprecated, Docker used instead) |
 
-### Deploy Lambda PDF (Container)
+---
+
+## 4. Development Process
+
+### Phase 1: Initial Implementation
+- Created `lambda_pdf.py` with WeasyPrint-based PDF generation
+- Set up Docker container based on `public.ecr.aws/lambda/python:3.11`
+- Installed system dependencies (cairo, pango, gdk-pixbuf2, freetype, fontconfig, gcc, gcc-c++, make, libjpeg-devel, zlib-devel, freetype-devel)
+
+### Phase 2: DocumentDB Integration
+- Added PyMongo with **4 connection strategies** with fallback:
+  1. Cluster endpoint with replicaSet
+  2. Cluster endpoint without replicaSet
+  3. Instance endpoint (directConnection)
+  4. Reader endpoint (secondaryPreferred)
+- Added TLS certificate download in Dockerfile (`global-bundle.pem` from AWS truststore)
+
+### Phase 3: S3 Deduplication
+- Added `check_pdf_exists()` function using S3 `head_object`
+- Returns existing presigned URL if PDF already exists (avoids regeneration, saves cost and time)
+- **Blocked**: IAM `s3:GetObject` permission propagation (waiting 1h+, temporarily disabled in code)
+
+### Phase 4: Error Handling
+- Added `.error` file generation in S3 for failed PDF generations
+- Error files contain anomaly_id, error message, traceback, UTC timestamp
+
+### Phase 5: JSON Serialization Fix
+- Added custom `JSONEncoder` class to handle MongoDB `ObjectId` and Python `datetime` serialization
+
+### Phase 6: Testing
+- Created test suite with pytest
+- Tests cover: PDF generation, S3 upload, DocDB connection, error handling, JSON serialization
+- Result: 18 passed, 3 skipped
+
+### Phase 7: Deployment
+- Built Docker image on `linux/amd64` platform
+- Pushed to ECR (`352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest`)
+- Updated Lambda function code via `aws lambda update-function-code`
+
+---
+
+## 5. Features Implemented
+
+### 5.1 PDF Generation
+- HTML/CSS rendering via WeasyPrint
+- DejaVu Sans font family (regular, bold, monospace) embedded in container
+- A4 page size, 2cm margins
+- Styled tables, headers, code blocks, blockquotes, horizontal rules
+- Markdown-to-HTML conversion via markdown2 (tables, fenced-code-blocks, header-ids, footnotes, strike, task_list)
+
+### 5.2 S3 Operations
+- Upload PDF to `bdcs-g3-reports-pdf` bucket
+- Generate presigned URLs (1-hour expiration via `generate_presigned_url`)
+- **Deduplication**: Check existing PDF via `head_object` (disabled — see section 7)
+- Write `.error` files on failure for debugging
+
+### 5.3 DocumentDB
+- Multi-strategy connection with automatic fallback loop
+- Metadata insertion: anomaly_id, s3_key, bucket, presigned_url, status, created_at, anomaly_data, ai_explanation
+- Non-blocking insert (warning logged on failure, doesn't fail Lambda execution)
+
+### 5.4 Error Handling
+- Try/except around entire `lambda_handler`
+- `.error` file written to S3 on any failure
+- Error details: anomaly_id, error message, full traceback, UTC timestamp
+
+### 5.5 Local Testing
+- `LOCAL_TEST=true` environment variable skips S3/DocumentDB calls
+- Writes PDF to `/tmp/` instead of S3
+- Mock event (`mock_event.json`) and explanation (`mock_explanation.txt`) files provided
+
+---
+
+## 6. Problems Encountered & Solutions
+
+### 6.1 IAM Permission: `s3:GetObject` Not Propagated ⚠️ **CURRENTLY BLOCKED**
+- **Problem**: `head_object` returns `403 Forbidden` because Lambda IAM role lacked `s3:GetObject`
+- **Policy updated**: `S3WriteReportsPolicy` now includes `["s3:PutObject", "s3:GetObject"]` on `arn:aws:s3:::bdcs-g3-reports-pdf/*`
+- **Status**: Policy verified correct via `aws iam get-role-policy`, but propagation to Lambda endpoints still pending (1h+ elapsed)
+- **Solution**: Temporarily disabled deduplication in `lambda_pdf.py` (deduplication block commented out around lines 144-158)
+- **Reactivation**: Uncomment the `check_pdf_exists` block once IAM propagation completes
+
+### 6.2 DocumentDB Connection Issues
+- **Problem**: Cluster endpoint sometimes unreachable, DNS resolution failures, TLS handshake errors
+- **Solution**: 4 connection strategies with fallback loop, 5-second server selection timeout, multiple endpoint types (cluster, instance, reader)
+
+### 6.3 Font Rendering in WeasyPrint
+- **Problem**: `@font-face` src paths invalid in Lambda container (file:// URLs not resolved)
+- **Solution**: Embedded DejaVu fonts in Docker image at `/var/task/fonts/`, referenced via `file:///var/task/fonts/`
+
+### 6.4 JSON Serialization of ObjectId/datetime
+- **Problem**: `json.dumps` fails on MongoDB `ObjectId` and Python `datetime` objects
+- **Solution**: Custom `JSONEncoder` class with `default()` method handling both types, exposed via `json_dumps()` helper
+
+### 6.5 Docker Build Cache
+- **Problem**: Slow rebuilds due to uncached system packages (yum install)
+- **Solution**: Docker layer caching for `yum install` and `pip install` steps — subsequent builds reuse cached layers
+
+---
+
+## 7. Current Status & Known Issues
+
+### ✅ Working
+- PDF generation with WeasyPrint
+- S3 upload + presigned URL generation
+- DocumentDB metadata insertion (multi-strategy connection)
+- Error handling with `.error` files
+- JSON serialization fix
+- Local testing mode (`LOCAL_TEST=true`)
+- Test suite: 18 passed, 3 skipped
+
+### ⏳ Blocked / Pending
+- **S3 Deduplication**: `head_object` returns 403 — waiting for IAM `s3:GetObject` propagation
+  - **Fix**: Uncomment `check_pdf_exists` block in `lambda_pdf.py` (lines 144-158)
+  - **Policy**: Already updated in IAM, waiting for AWS propagation (can take 15-60+ minutes)
+
+### 🔄 Temporary Behavior (without deduplication)
+- Every invocation generates a new PDF even if one already exists for the same anomaly_id
+- No functional impact, just minor S3 storage duplication
+- Presigned URL still returned correctly for the newly generated PDF
+
+---
+
+## 8. Deployment
+
+### 8.1 Prerequisites
+- AWS CLI configured with appropriate credentials
+- Docker installed and running
+- ECR repository `352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf` exists
+
+### 8.2 Build & Push Docker Image
+
 ```bash
 cd etape-3
-docker buildx build --platform linux/amd64 -f Dockerfile.lambda_pdf -t bdcs-g3-lambda-pdf .
-docker tag bdcs-g3-lambda-pdf:latest 352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest
+
+# Build Docker image for linux/amd64
+docker buildx build --platform linux/amd64 -f Dockerfile.lambda_pdf \
+  -t bdcs-g3-lambda-pdf . --output type=docker,dest=/tmp/lambda-image.tar
+
+# Load into local Docker
+docker load -i /tmp/lambda-image.tar
+
+# Tag for ECR
+docker tag bdcs-g3-lambda-pdf:latest \
+  352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest
+
+# Authenticate with ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS \
+  --password-stdin 352909266144.dkr.ecr.us-east-1.amazonaws.com
+
+# Push to ECR
 docker push 352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest
-aws lambda update-function-code --function-name bdcs-g3-lambda-pdf --image-uri 352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest
 ```
 
-### Deploy Lambda AI (Zip)
-```bash
-cd etape-3
-mkdir -p package_ai && cp lambda_ai.py package_ai/
-cd package_ai && zip -r ../lambda_ai.zip .
-aws lambda update-function-code --function-name bdcs-g3-lambda-ai --zip-file fileb://lambda_ai.zip
-```
+### 8.3 Update Lambda Function
 
-### Environment Variables (Lambda PDF)
 ```bash
-aws lambda update-function-configuration \
+aws lambda update-function-code \
   --function-name bdcs-g3-lambda-pdf \
-  --environment "Variables={
-    S3_BUCKET_REPORTS=bdcs-g3-reports-pdf,
-    DOCDB_HOST=bdcs-g3-documentdb-cluster.cluster-c9ackrdwcwiz.us-east-1.docdb.amazonaws.com,
-    DOCDB_DATABASE=ingestion,
-    DOCDB_COLLECTION=reports_metadata,
-    DOCDB_USERNAME=clusteradmin,
-    DOCDB_PASSWORD=myclusterpassword,
-    DOCDB_TLS=true
-  }"
+  --image-uri 352909266144.dkr.ecr.us-east-1.amazonaws.com/bdcs-g3-lambda-pdf:latest \
+  --region us-east-1
+
+# Wait for activation
+aws lambda wait function-active-v2 --function-name bdcs-g3-lambda-pdf --region us-east-1
 ```
 
-### VPC Configuration
-```bash
-aws lambda update-function-configuration \
-  --function-name bdcs-g3-lambda-pdf \
-  --vpc-config "SubnetIds=subnet-082245938bf53dc2d,subnet-053910c8b65c20a77,SecurityGroupIds=sg-00b097d8044392d31"
-```
+### 8.4 Environment Variables (Lambda)
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `S3_BUCKET_REPORTS` | `bdcs-g3-reports-pdf` | S3 bucket for PDF storage |
+| `DOCDB_HOST` | `bdcs-g3-documentdb-cluster.cluster-c9ackrdwcwiz.us-east-1.docdb.amazonaws.com` | DocumentDB cluster endpoint |
+| `DOCDB_USERNAME` | `clusteradmin` | DocumentDB username |
+| `DOCDB_PASSWORD` | `myclusterpassword` | DocumentDB password |
+| `DOCDB_DATABASE` | `ingestion` | DocumentDB database name |
+| `DOCDB_COLLECTION` | `reports_metadata` | DocumentDB collection name |
+| `DOCDB_TLS` | `true` | Enable TLS for DocumentDB |
+| `Timeout` | `60` | Lambda timeout in seconds |
+| `MemorySize` | `1024` | Lambda memory in MB |
 
 ---
 
-## 🧪 Running Tests
+## 9. Maintenance Guide
+
+### 9.1 Reactivate S3 Deduplication
+
+When IAM `s3:GetObject` propagation completes, uncomment the deduplication block in `lambda_pdf.py` (around lines 144-158):
+
+```python
+# Check if PDF already exists in S3 (deduplication)
+s3_key = file_name
+if not local_test:
+    s3_client = boto3.client("s3", region_name=region)
+    if check_pdf_exists(s3_client, bucket_name, s3_key):
+        print(f"PDF already exists for {anomaly_id}, returning existing presigned URL")
+        presigned_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket_name, "Key": file_name},
+            ExpiresIn=3600
+        )
+        return {
+            "statusCode": 200,
+            "presigned_url": presigned_url
+        }
+```
+
+### 9.2 Run Tests Locally
 
 ```bash
 cd etape-3
-python -m venv .venv_test
-source .venv_test/bin/activate
 pip install -r test_requirements.txt
 pytest tests/ -v
 ```
 
----
+### 9.3 Local Test (without AWS)
 
-## 🔗 Integration Points
-
-| From | To | Interface |
-|------|-----|-----------|
-| Streamlit UI (Aymen) | Lambda AI | `lambda_client.invoke(FunctionName='bdcs-g3-lambda-ai', InvocationType='RequestResponse')` |
-| Lambda AI | Lambda PDF | Async `lambda:InvokeFunction` with payload `{anomaly_data, ai_explanation}` |
-| Lambda PDF | S3 | `upload_file` + `generate_presigned_url` |
-| Lambda PDF | DocumentDB | `pymongo` with TLS, `replicaSet=rs0`, `readPreference=secondaryPreferred` |
-
----
-
-## 📝 API Contracts
-
-### Lambda AI Input (from UI)
-```json
-{
-  "anomaly_id": "FRA_EGY_1001_2023-05",
-  "period": "2023-05",
-  "reporter": "FRA",
-  "partner": "EGY",
-  "hs_code": "1001",
-  "product_name": "Wheat",
-  "fob_unit_price": 400.0,
-  "cif_unit_price": 600.0,
-  "gap_pct": 50.0,
-  "anomaly_type": "Gap > 35%",
-  "historical_context": "Historical average gap on this route: 12%."
-}
+```bash
+cd etape-3
+LOCAL_TEST=true python lambda_pdf.py
 ```
 
-### Lambda AI Output (async invoke to Lambda PDF)
-```json
-{
-  "anomaly_data": { ... },  // Same as input
-  "ai_explanation": "# Anomaly Report...\n## 1. GEOPOLITICAL..."
-}
+This reads `mock_event.json` and `mock_explanation.txt`, generates a PDF in `/tmp/`, and skips S3/DocumentDB.
+
+### 9.4 Check Lambda Logs
+
+```bash
+aws logs tail /aws/lambda/bdcs-g3-lambda-pdf --since 5m --region us-east-1
 ```
 
-### Lambda PDF Output (DocDB `reports_metadata`)
-```json
-{
-  "anomaly_id": "FRA_EGY_1001_2023-05",
-  "s3_key": "report_FRA_EGY_1001_2023-05.pdf",
-  "bucket": "bdcs-g3-reports-pdf",
-  "presigned_url": "https://...",
-  "status": "COMPLETED",
-  "created_at": "2026-10-31T20:48:09.108Z",
-  "anomaly_data": {...},
-  "ai_explanation": "..."
-}
+### 9.5 Verify IAM Policy
+
+```bash
+aws iam get-role-policy \
+  --role-name bdcs-g3-lambda-pdf-role \
+  --policy-name S3WriteReportsPolicy \
+  --region us-east-1
 ```
 
----
+Expected output should include both `s3:PutObject` and `s3:GetObject` in the Action list.
 
-## 🔐 Security
+### 9.6 Verify S3 Bucket Contents
 
-- **No secrets in code** - all via env vars
-- **DocumentDB TLS** - mandatory, CA bundle from AWS trust store
-- **VPC isolation** - Lambdas in private subnets, no internet access
-- **Presigned URLs** - 1-hour expiry, no public S3 access
-- **Least-privilege IAM** - per-function roles
+```bash
+aws s3 ls s3://bdcs-g3-reports-pdf/ --region us-east-1
+```
 
----
-
-## 📚 References
-
-- [AWS Lambda Developer Guide](https://docs.aws.amazon.com/lambda/)
-- [Amazon DocumentDB Developer Guide](https://docs.aws.amazon.com/documentdb/)
-- [Amazon Bedrock User Guide](https://docs.aws.amazon.com/bedrock/)
-- [Weasyprint Documentation](https://doc.courtbouillon.org/weasyprint/)
-- [Project Architecture Diagram](../architecture.md)
+Look for `report_<anomaly_id>.pdf` files and any `report_<anomaly_id>.error` files.
 
 ---
 
-*Last updated: 2026-10-31 | Team: Zekria (Step 3 - AI/PDF)*  
-*Course: BDCS-G3 - Comtrade Anomaly Detection Pipeline*
+## 10. Contributors
+
+- **Sormasor** — Lambda PDF implementation, Docker containerization, S3/DocumentDB integration, deduplication logic, error handling, testing, deployment
+- **Aymen** — Branch `1-bloc-application` (Streamlit frontend, async report invocation flow, S3 fetch/display)
+
+---
+
+## 11. License
+
+Academic project — HES-SO TSM CloudSys.
+
+---
+
+*Last updated: November 1, 2026*

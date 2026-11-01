@@ -141,21 +141,21 @@ def lambda_handler(event, context):
         error_key = f"report_{anomaly_id}.error"
         s3_key = file_name
 
-        # Check if PDF already exists in S3 (deduplication)
-        s3_key = file_name
-        if not local_test:
-            s3_client = boto3.client("s3", region_name=region)
-            if check_pdf_exists(s3_client, bucket_name, s3_key):
-                print(f"PDF already exists for {anomaly_id}, returning existing presigned URL")
-                presigned_url = s3_client.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": bucket_name, "Key": file_name},
-                    ExpiresIn=3600
-                )
-                return {
-                    "statusCode": 200,
-                    "presigned_url": presigned_url
-                }
+        # Check if PDF already exists in S3 (deduplication) - DISABLED temporarily due to IAM propagation
+        # s3_key = file_name
+        # if not local_test:
+        #     s3_client = boto3.client("s3", region_name=region)
+        #     if check_pdf_exists(s3_client, bucket_name, s3_key):
+        #         print(f"PDF already exists for {anomaly_id}, returning existing presigned URL")
+        #         presigned_url = s3_client.generate_presigned_url(
+        #             "get_object",
+        #             Params={"Bucket": bucket_name, "Key": file_name},
+        #             ExpiresIn=3600
+        #         )
+        #         return {
+        #             "statusCode": 200,
+        #             "presigned_url": presigned_url
+        #         }
 
         markdown_to_pdf(explanation, local_path)
         print(f"PDF genere : {local_path}")
