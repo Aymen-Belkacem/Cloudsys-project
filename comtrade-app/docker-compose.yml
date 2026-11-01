@@ -1,0 +1,61 @@
+# Local development only: ECS does not use this file.
+# Usage: docker compose up --build   then   http://localhost:8501
+x-app-build: &app-build
+  context: .
+  args:
+    APP_VERSION: local
+
+x-database-env: &database-env
+  DOCDB_HOST: mongo
+  DOCDB_TLS: "false"
+  DOCDB_DATABASE: ingestion
+  DOCDB_COLLECTION: products
+
+services:
+  # Stands in for DocumentDB, without TLS or authentication
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Loads data/Bilateral_data.csv once, then exits
+  seed:
+    build: *app-build
+    image: comtrade-app:local
+    environment: *database-env
+    volumes:
+      - ./local:/local:ro
+      - ../data:/data:ro
+    command: ["python", "/local/seed.py"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  app:
+    build: *app-build
+    image: comtrade-app:local
+    ports:
+      - "8501:8501"
+    environment:
+      <<: *database-env
+      APP_ENV: local
+      AI_LAMBDA_NAME: bdcs-g3-lambda-ai
+      REPORTS_BUCKET: bdcs-g3-reports-pdf
+      AWS_REGION: us-east-1
+    # Mount the code to see changes without rebuilding (Streamlit hot reload)
+    # and your AWS credentials: AI reports use the real Lambda and bucket
+    volumes:
+      - ./app:/app
+      - ${HOME}/.aws:/home/appuser/.aws:ro
+    command: ["streamlit", "run", "app.py", "--server.runOnSave=true"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  mongo-data:

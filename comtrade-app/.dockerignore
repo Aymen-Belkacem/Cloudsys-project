@@ -1,0 +1,15 @@
+# Only copy into the image what the app needs
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.env
+infra/
+README.md
+docker-compose.yml
+Dockerfile
+local/
+tests/
+pytest.ini
