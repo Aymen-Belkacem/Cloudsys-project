@@ -53,7 +53,7 @@ Automated anomaly report generation via Claude and Nova models.
 
 = Streamlit application
 
-The main resource was originally designed as an AWS App Runner. Due to Amazon discontinuing App Runners, it is instead an ECS Express Mode (ECS) resource. The deployment works by first building a docker image describing the application's server, and then by pushing the image to an Elastic Container Registry (ECR) repository.
+The main resource was originally designed as an AWS App Runner. Due to Amazon discontinuing App Runners, it is instead an Elastic Container Service (ECS) Express Mode resource. The deployment works by first building a docker image describing the application's server, and then by pushing the image to an Elastic Container Registry (ECR) repository.
 
 The script `deploy.sh` in the `infra` folder describes both the deployment of the application and its architectural choices. It is necessary to have the aws program installed and properly configured on the shell executing the script. Here "properly configured" means having set up the correct credentials and region - The region must be the same across the whole architecture.
 
