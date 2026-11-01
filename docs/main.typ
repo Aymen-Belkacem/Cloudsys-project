@@ -50,3 +50,11 @@ Automated anomaly report generation via Claude and Nova models.
   [Comparative study of cloud services], [Final AWS services selection], [Zekria, Luca, Aymen],
   [Security, privacy, sovereignty], [IAM management and restrictions], [Zekria, Luca, Aymen]
 )
+
+= Streamlit application
+
+The main resource was originally designed as an AWS App Runner. Due to Amazon discontinuing App Runners, it is instead an ECS Express Mode (ECS) resource. The deployment works by first building a docker image describing the application's server, and then by pushing the image to an Elastic Container Registry (ECR) repository.
+
+The script `deploy.sh` in the `infra` folder describes both the deployment of the application and its architectural choices. It is necessary to have the aws program installed and properly configured on the shell executing the script. Here "properly configured" means having set up the correct credentials and region - The region must be the same across the whole architecture.
+
+Many constants are configured in the `config.env` file in the `infra` folder. They include fallback values for the AWS region, container configurations, and the necessary information to connect to the other two main parts of the project, the data and the chatbot. One notable exception is the DocumentDB's password, which is instead stored in an Amazon Secret. The secret's name is written in `config.env` with the rest of the daabse's constants, which allows the script to transmit the actual password to the container as a secretive environment variable called "SECRET_ARN".
