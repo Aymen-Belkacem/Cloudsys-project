@@ -16,7 +16,7 @@ the logs. Only `APP_ENV=local` shows them in the page, with the container hostna
 ## Layout
 
 ```
-comtrade-app/
+etape-2-ui/
 ├── app/
 │   ├── app.py                 # entry point, page navigation
 │   ├── matrix_page.py         # heatmap page
@@ -41,7 +41,7 @@ comtrade-app/
     └── teardown.sh            # deletes the resources (stops billing)
 ```
 
-All commands below run from the `comtrade-app/` directory.
+All commands below run from the `etape-2-ui/` directory.
 
 ## 1. Run locally
 
