@@ -66,6 +66,6 @@ Public HTTPS entry point of the dashboard.
   [Comparative study of cloud services], [Final AWS services selection], [Zekria, Luca, Aymen],
   [Security, privacy, sovereignty], [IAM management and restrictions], [Zekria, Luca, Aymen],
   [Data Ingestion], [Bucket S3, VPC Network, Lambda Function, DocumentDB], [Luca],
-  [IA], [???], [Zekria],
+  [IA], [Lambda AI, Lambda PDF, Bedrock, S3 reports, DocumentDB], [Zekria],
   [Streamlit Application], [ECR, ECS, ALB, Secrets, IAM, Cloudwatch], [Aymen]
 )

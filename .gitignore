@@ -25,6 +25,8 @@ __pycache__/
 # PDF test outputs
 *.pdf
 /tmp/report_*.pdf
+# règle qui laisse passer main.pdf
+!main.pdf
 
 # Docker
 lambda-image.tar
