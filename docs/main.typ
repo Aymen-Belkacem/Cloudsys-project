@@ -46,7 +46,7 @@ Public HTTPS entry point of the dashboard.
 2. Compute processes are represented by a set of FaaS on AWS Lambda.
 3. The database is deployed on Amazon DocumentDB.
 4. Generative AI is served via the managed Amazon Bedrock API.
-5. Everything is connected through a VPC network with private subnets and security groups.
+5. Everything is connected through a VPC network and security groups.
 6. The Streamlit dashboard runs as a single container on Amazon ECS Express Mode. AWS Fargate runs the container without any server to manage.
 7. The container image is stored in an Amazon ECR repository.
 8. An Application Load Balancer is automatically created by ECS Express Mode. It exposes the dashboard over HTTPS and performs a health check of the container.
@@ -62,7 +62,7 @@ Public HTTPS entry point of the dashboard.
   align: horizon,
   [*Tasks*], [*Outcome*], [*Students involved*],
   [Design of the architecture], [Validated diagram], [Zekria, Luca, Aymen],
-  [Deployment and implementation], [Active pipelines and App Runner], [Zekria, Luca, Aymen],
+  [Deployment and implementation], [Active pipelines], [Zekria, Luca, Aymen],
   [Comparative study of cloud services], [Final AWS services selection], [Zekria, Luca, Aymen],
   [Security, privacy, sovereignty], [IAM management and restrictions], [Zekria, Luca, Aymen],
   [Data Ingestion], [Bucket S3, VPC Network, Lambda Function, DocumentDB], [Luca],
