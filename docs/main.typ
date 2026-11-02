@@ -6,14 +6,14 @@
 
 *Group:* G3 \
 *Students:* Aymen Belkacem, Luca Di Cosola, Zekria Sormasor \
-*Git URL:* TODO: to add \
+*Git URL:* https://github.com/Aymen-Belkacem/Cloudsys-project \
 *Link to a video:*  TODO: to add
 
 = 1. Architecture
 
 #figure(
-  rect(width: 100%, height: 7cm, stroke: 1pt + black)[Insert architecture image here],
-  caption: [Component workflow (S3, Lambda, App Runner, DocumentDB, Bedrock)]
+  image("archi_cloudsys.drawio.png", width: 100%),
+  caption: [Component workflow (S3, Lambda, ECS, DocumentDB, Bedrock)]
 )
 
 == 1.1 Components
@@ -29,6 +29,11 @@ NoSQL database to persist analysis results and metadata.
 
 *Amazon Bedrock:*
 Automated anomaly report generation via Claude and Nova models.
+
+*Amazon Elastic Container Registry (ECR):*
+Container Image registry for the dashboard container.
+
+*Amazon Elastic Container Service (ECS)*
 
 = 2. Deployment
 
