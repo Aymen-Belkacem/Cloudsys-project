@@ -8,7 +8,7 @@
 *Group:* G3 \
 *Students:* Aymen Belkacem, Luca Di Cosola, Zekria Sormasor \
 *Git URL:* https://github.com/Aymen-Belkacem/Cloudsys-project \
-*Link to a video:*  TODO: to add
+*Link to the demo video:* https://github.com/Aymen-Belkacem/Cloudsys-project/blob/main/docs/demo_projet.mov
 
 = 1. Architecture
 
