@@ -5,7 +5,7 @@
 #align(center, text(17pt)[*Project: Wheat Trade Anomaly Detection*])
 #v(1em)
 
-*Group:* G3 \
+*Group:* G2 \
 *Students:* Aymen Belkacem, Luca Di Cosola, Zekria Sormasor \
 *Git URL:* https://github.com/Aymen-Belkacem/Cloudsys-project \
 *Link to the demo video:* https://github.com/Aymen-Belkacem/Cloudsys-project/blob/main/docs/demo_projet.mov
