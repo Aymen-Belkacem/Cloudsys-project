@@ -190,13 +190,16 @@ def lambda_handler(event, context):
         # Insert into DocumentDB (non-blocking, best effort)
         if not local_test:
             try:
-                # Use environment variables like Luca/Aymen's code
+                # Use environment variables
                 docdb_host = os.environ.get("DOCDB_HOST", "bdcs-g3-documentdb-cluster.cluster-c9ackrdwcwiz.us-east-1.docdb.amazonaws.com")
-                docdb_username = os.environ.get("DOCDB_USERNAME", "clusteradmin")
-                docdb_password = os.environ.get("DOCDB_PASSWORD", "myclusterpassword")
+                docdb_username = os.environ.get("DOCDB_USERNAME")
+                docdb_password = os.environ.get("DOCDB_PASSWORD")
                 docdb_database = os.environ.get("DOCDB_DATABASE", "ingestion")
                 docdb_collection = os.environ.get("DOCDB_COLLECTION", "reports_metadata")
                 docdb_tls = os.environ.get("DOCDB_TLS", "true").lower() == "true"
+
+                if not docdb_username or not docdb_password:
+                    raise ValueError("DOCDB_USERNAME and DOCDB_PASSWORD environment variables are required")
 
                 # Build MongoDB URI
                 docdb_uri = f"mongodb://{docdb_username}:{docdb_password}@{docdb_host}:27017"
@@ -205,7 +208,7 @@ def lambda_handler(event, context):
                 ca_file = "/opt/python/global-bundle.pem"
 
                 # DocumentDB connection options - try multiple strategies
-                # Strategy 1: Standard DocumentDB options (like Aymen's code)
+                # Strategy 1: Standard DocumentDB options
                 documentdb_options = {
                     "tls": docdb_tls,
                     "tlsCAFile": "/opt/python/global-bundle.pem",
