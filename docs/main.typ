@@ -34,10 +34,15 @@ Automated anomaly report generation via Claude and Nova models.
 
 1. Raw data is stored on Amazon S3 buckets.
 2. Compute processes are represented by a set of FaaS on AWS Lambda.
-3. The Streamlit application is deployed on AWS App Runner as a managed service.
-4. The database is deployed on Amazon DocumentDB.
-5. Generative AI is served via the managed Amazon Bedrock API.
-6. Everything is connected through a VPC network with private subnets and security groups.
+3. The database is deployed on Amazon DocumentDB.
+4. Generative AI is served via the managed Amazon Bedrock API.
+5. Everything is connected through a VPC network with private subnets and security groups.
+6. The Streamlit dashboard runs as a single container on Amazon ECS Express Mode. AWS Fargate runs the container without any server to manage. AWS App Runner was in the initial conception but it was dropped because it does not support the WebSockets Streamlit needs, and it is closed to new customers anyway.
+7. The container image is stored in an Amazon ECR repository, with a unique tag per deployment.
+8. An Application Load Balancer is automatically created by ECS Express Mode. It exposes the dashboardover HTTPS and performs a health check of the container.
+9. A dedicated security group for the dashboard is allowed on the port 27017 of the DocumentDB.
+10. An IAM role limits the dashboard, allowing it to only invoking the AI Lambda and reading the generated reports from S3
+11. A Cloudwatch Logs group monitors the Streamlit dashboard.
 
 = 3. Tasks
 
