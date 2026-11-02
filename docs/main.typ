@@ -63,6 +63,12 @@ The enriched rows are converted into documents and inserted through PyMongo usin
 
 The Lambda function is attached to the VPC providing access to DocumentDB. The database security group allows TCP connections on port 27017 from the Lambda security group. An S3 Gateway endpoint, associated with the relevant subnet route tables, enables file retrieval from this VPC. The DocumentDB connection uses TLS and the `global-bundle.pem` certificate bundle; cluster storage is encrypted. The IAM role grants permission to read the bucket, perform the network operations required by Lambda, and write logs to CloudWatch.
 
+== Service selection
+
+*AWS Lambda* fits the event-driven ingestion workflow: each S3 upload triggers processing without requiring a continuously running application server. Its Python runtime supports the existing pandas transformation code, while AWS manages the execution infrastructure.
+
+*Amazon DocumentDB* provides managed document storage for the enriched records. Each processed row can be stored directly as a document containing the original attributes, calculated prices, and anomaly flag. Its flexible document model allows additional fields to be introduced as processing evolves, and its MongoDB-compatible API supports the PyMongo operations used in this project. This choice prioritizes document storage and Python integration; it does not imply that a relational database would be unsuitable for the original tabular data.
+
 == Network configuration and dependencies
 
 In this architecture, Lambda and DocumentDB use the same VPC, with separate security groups belonging to that VPC. The DocumentDB security group allows inbound TCP traffic on port 27017 from the Lambda security group, whose outbound rules must also allow this connection.
